@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "jp.metaranai.app"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "jp.metaranai.app"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 4
         versionName = "0.4.0"
     }
@@ -24,7 +24,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.04.01"))
     implementation("androidx.activity:activity-compose:1.12.4")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
