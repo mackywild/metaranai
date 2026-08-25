@@ -5,7 +5,7 @@
 ## V0.5の主な追加
 
 - **Spotify Artist Direct**
-  - Spotify Web API `GET /search` でArtist完全一致を照合
+  - Spotify Web API `GET /search` でArtist完全一致を照合する
   - 一致した場合 `external_urls.spotify` へ直接遷移
   - Spotifyに存在しない/未認証/照合失敗時は従来のSpotify検索へ安全にフォールバック
   - 解決済みURLはローカルキャッシュ
