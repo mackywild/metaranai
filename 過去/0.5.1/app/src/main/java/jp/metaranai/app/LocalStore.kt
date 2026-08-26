@@ -48,7 +48,7 @@ class LocalStore(context: Context) {
     }
 
     /**
-     * V0.5.2 compatibility:
+     * V0.5.1 compatibility:
      * old HIT remains HIT, old MAYBE becomes SOME, old MISS becomes MEH.
      * We never upgrade a legacy HIT to LOVE_ALL or downgrade a legacy MISS to NO_INTEREST.
      */
@@ -81,7 +81,7 @@ class LocalStore(context: Context) {
 
     fun saveSearchHistory(records: List<SearchRecord>) {
         val a = JSONArray()
-        // V0.5.2: search history is no longer truncated. The local archive is an asset.
+        // V0.5.1: search history is no longer truncated. The local archive is an asset.
         records.forEach { r -> a.put(JSONObject().apply {
             put("query", r.query); put("artist", r.artistName); put("dateTime", r.dateTime)
         }) }
@@ -143,7 +143,7 @@ class LocalStore(context: Context) {
 
     fun saveExternalArtists(artists: List<MetalArtist>) {
         val a = JSONArray()
-        // V0.5.2: no artificial 500-artist ceiling. Every discovered/queried metal artist is retained.
+        // V0.5.1: no artificial 500-artist ceiling. Every discovered/queried metal artist is retained.
         artists.forEach { artist ->
             a.put(JSONObject().apply {
                 put("name", artist.name); put("country", artist.country); put("discovery", artist.discovery); put("reason", artist.reason)
@@ -232,7 +232,7 @@ class LocalStore(context: Context) {
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 52)
+        out.put("version", 51)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {

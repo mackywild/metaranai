@@ -9,7 +9,7 @@ import java.net.URL
 import kotlin.math.roundToInt
 
 /**
- * V0.5.2 external discovery:
+ * V0.5.1 external discovery:
  * - Last.fm similar/tag discovery
  * - Last.fm live artist.search
  * - Last.fm listeners/playcount
@@ -57,69 +57,6 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     }
 
     /**
-     * V0.5.2 Genre Lens pool builder.
-     * The selected genre is a hard eligibility condition. When the local pool is thin,
-     * fetch Last.fm tag candidates first and retain enough genre-specific artists before recommending.
-     */
-    suspend fun ensureGenrePool(
-        genreLenses: List<String>,
-        minimumPerGenre: Int = 10,
-        fetchPerGenre: Int = 36
-    ): Result<GenrePoolResult> = withContext(Dispatchers.IO) {
-        runCatching {
-            val genres = genreLenses.distinct().filter { it in GenreLensCatalog.names() }.take(4)
-            require(genres.isNotEmpty()) { "Genre Lensがありません" }
-            val key = store.lastFmApiKey()
-            require(key.isNotBlank()) { "Last.fm API Keyを設定してください" }
-
-            var archive = (MetalCatalog.artists + store.loadExternalArtists()).distinctBy { it.name.lowercase() }
-            val fetchedByGenre = linkedMapOf<String, Int>()
-            val accepted = mutableListOf<MetalArtist>()
-
-            genres.forEach { genre ->
-                val before = GenreLensCatalog.filter(archive, listOf(genre)).size
-                if (before >= minimumPerGenre) {
-                    fetchedByGenre[genre] = 0
-                    return@forEach
-                }
-                val need = minimumPerGenre - before
-                val raw = getTopArtistsByTag(key, genre, fetchPerGenre.coerceIn(12, 50))
-                fetchedByGenre[genre] = raw.size
-                val knownNames = archive.map { it.name.lowercase() }.toMutableSet()
-                var addedForGenre = 0
-                var mbLookups = 0
-                for (candidate in raw) {
-                    if (addedForGenre >= need) break
-                    if (candidate.name.lowercase() in knownNames) continue
-                    val artist = enrichCandidate(
-                        key,
-                        candidate,
-                        musicBrainzAllowed = mbLookups < 4,
-                        already = false,
-                        forcedGenre = genre
-                    ) ?: continue
-                    if (mbLookups < 4) mbLookups++
-                    accepted += artist
-                    knownNames += artist.name.lowercase()
-                    addedForGenre++
-                    archive = (archive + artist).distinctBy { it.name.lowercase() }
-                }
-            }
-
-            val combined = mergeCache(accepted)
-            val fullArchive = (MetalCatalog.artists + combined).distinctBy { it.name.lowercase() }
-            GenrePoolResult(
-                genres = genres,
-                fetched = fetchedByGenre.values.sum(),
-                accepted = accepted.size,
-                cached = combined.size,
-                counts = GenreLensCatalog.countByGenre(fullArchive, genres),
-                artists = combined
-            )
-        }
-    }
-
-    /**
      * Live global search. Local search is handled first in MainViewModel; this expands beyond the device DB.
      * Results that are confirmed as metal are immediately retained in the local archive.
      */
@@ -144,14 +81,9 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         }
     }
 
-    private fun enrichCandidate(apiKey: String, c: Candidate, musicBrainzAllowed: Boolean, already: Boolean, forcedGenre: String? = null): MetalArtist? {
+    private fun enrichCandidate(apiKey: String, c: Candidate, musicBrainzAllowed: Boolean, already: Boolean): MetalArtist? {
         val tags = getTopTags(apiKey, c.name)
-        val metalTags = tags.filter { DiscoveryTagMapper.isMetalTag(it) }.toMutableList()
-        // tag.getTopArtists(genre) is itself a genre membership signal. Preserve it in the local archive
-        // even when the artist's current top-tags list only contains a broader metal tag.
-        if (forcedGenre != null && metalTags.none { it.equals(forcedGenre, true) }) {
-            metalTags.add(0, forcedGenre.lowercase())
-        }
+        val metalTags = tags.filter { DiscoveryTagMapper.isMetalTag(it) }
         if (metalTags.isEmpty()) return null
 
         val vocalType = VocalAnalyzer.infer(tags)
@@ -287,7 +219,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         val query = params.entries.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8") }=${URLEncoder.encode(v, "UTF-8")}" }
         val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 12_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.5.2")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.5.1")
         }
         val code = connection.responseCode
         val body = (if (code in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }
@@ -308,6 +240,3 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 }
 
 data class ExternalDiscoveryResult(val fetched: Int, val accepted: Int, val cached: Int, val seeds: List<String>, val artists: List<MetalArtist>)
-
-
-data class GenrePoolResult(val genres: List<String>, val fetched: Int, val accepted: Int, val cached: Int, val counts: Map<String, Int>, val artists: List<MetalArtist>)

@@ -16,7 +16,6 @@ import java.time.LocalDateTime
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = LocalStore(app)
-    private val minimumLensPoolPerGenre = 10
     private val engine = RecommendationEngine()
     private val spotify = SpotifyClient(app, store)
     private val externalDiscovery = ExternalDiscoveryClient(store)
@@ -60,32 +59,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _backupStatus = MutableStateFlow("")
     val backupStatus: StateFlow<String> = _backupStatus
 
-    private val _genreLensPreparing = MutableStateFlow(false)
-    val genreLensPreparing: StateFlow<Boolean> = _genreLensPreparing
-    private val _genreLensReady = MutableStateFlow(initialLensReady())
-    val genreLensReady: StateFlow<Boolean> = _genreLensReady
-    private val _genreLensStatus = MutableStateFlow(initialLensStatus())
-    val genreLensStatus: StateFlow<String> = _genreLensStatus
-
     private var lensRefreshJob: Job? = null
-
-    init {
-        val genres = activeGenres()
-        if (genres.isNotEmpty() && !currentLensPoolSatisfied()) {
-            _genreLensReady.value = false
-            _genreLensPreparing.value = true
-            _genreLensStatus.value = currentLensStatus()
-            if (store.lastFmApiKey().isNotBlank()) {
-                viewModelScope.launch {
-                    delay(250)
-                    ensureGenreLensPool()
-                }
-            } else {
-                _genreLensPreparing.value = false
-                _genreLensStatus.value += " / Last.fm API Keyを設定すると自動補充できます"
-            }
-        }
-    }
 
     fun react(reaction: Reaction) {
         val rec = _recommendation.value
@@ -98,7 +72,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun shuffle() {
-        if (activeGenres().isNotEmpty() && !_genreLensReady.value) return
         _recommendation.value = recommendNow(System.currentTimeMillis())
     }
 
@@ -221,16 +194,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun syncExternalDiscovery() {
         if (_discovering.value) return
-        val genres = activeGenres()
-        if (genres.isNotEmpty()) {
-            ensureGenreLensPool(force = true)
-            return
-        }
         val seeds = discoverySeeds()
+        val genres = activeGenres()
         _discovering.value = true
-        _discoveryStatus.value = "外部発掘中: ${seeds.joinToString(" / ")}"
+        _discoveryStatus.value = "外部発掘中: ${(seeds + genres).joinToString(" / ")}"
         viewModelScope.launch {
-            externalDiscovery.discover(seeds).onSuccess { result ->
+            externalDiscovery.discover(seeds, genres).onSuccess { result ->
                 _externalArtists.value = result.artists
                 val summary = "候補${result.fetched}件 → Metal+Hidden判定${result.accepted}件 / Local DB ${result.cached}組"
                 _discoveryStatus.value = summary
@@ -299,91 +268,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
         _discoveryStatus.value = store.discoverySummary()
-        _genreLensReady.value = currentLensPoolSatisfied()
-        _genreLensStatus.value = currentLensStatus()
         _recommendation.value = recommendNow()
     }
 
     /**
-     * V0.5.2: Genre Lens is a hard candidate condition.
-     * If the local genre pool is insufficient, do not show an off-genre recommendation;
-     * first expand the requested genre pool, then recalculate TODAY.
+     * Genre Lens changes update TODAY immediately, then expand that genre's external pool after a short debounce.
      */
     private fun saveLensAndRefresh() {
         store.saveGenreLens(_genreLens.value)
+        _recommendation.value = recommendAfterLensChange()
+
         lensRefreshJob?.cancel()
         val genres = activeGenres()
-        if (genres.isEmpty()) {
-            _genreLensPreparing.value = false
-            _genreLensReady.value = true
-            _genreLensStatus.value = ""
-            _recommendation.value = recommendNow()
-            return
-        }
-
-        val counts = lensCounts(genres)
-        val ready = counts.values.all { it >= minimumLensPoolPerGenre }
-        _genreLensReady.value = ready
-        _genreLensPreparing.value = !ready
-        _genreLensStatus.value = lensStatusText(genres, counts, ready)
-        if (GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()) {
-            _recommendation.value = recommendNow()
-        }
-
-        if (!ready && store.lastFmApiKey().isNotBlank()) {
-            lensRefreshJob = viewModelScope.launch {
-                delay(350)
-                ensureGenreLensPool()
-            }
-        } else if (!ready) {
-            _genreLensStatus.value += " / Last.fm API Keyを設定すると自動補充できます"
-        }
-    }
-
-    private fun ensureGenreLensPool(force: Boolean = false) {
-        val genres = activeGenres()
-        if (genres.isEmpty() || _discovering.value) return
-        if (!force && currentLensPoolSatisfied()) {
-            _genreLensReady.value = true
-            _genreLensPreparing.value = false
-            _genreLensStatus.value = currentLensStatus()
-            _recommendation.value = recommendNow()
-            return
-        }
-        if (store.lastFmApiKey().isBlank()) {
-            _genreLensReady.value = GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()
-            _genreLensPreparing.value = false
-            _genreLensStatus.value = "${genres.joinToString(" / ")} の候補不足 / Last.fm API Key未設定"
-            return
-        }
-
-        _discovering.value = true
-        _genreLensPreparing.value = true
-        _genreLensStatus.value = "${genres.joinToString(" / ")} の地下を優先探索中…"
-        _discoveryStatus.value = _genreLensStatus.value
-        viewModelScope.launch {
-            externalDiscovery.ensureGenrePool(genres, minimumLensPoolPerGenre).onSuccess { result ->
-                _externalArtists.value = result.artists
-                val counts = lensCounts(genres)
-                val hasAny = GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()
-                _genreLensReady.value = hasAny
-                _genreLensPreparing.value = false
-                _genreLensStatus.value = if (hasAny) {
-                    "Genre Lens候補 ${counts.entries.joinToString(" / ") { "${it.key} ${it.value}組" }} / Local DB ${result.cached}組"
-                } else {
-                    "${genres.joinToString(" / ")} の候補を取得できませんでした"
-                }
-                val summary = "Genre Lens: 候補${result.fetched}件 → 追加${result.accepted}件 / ${_genreLensStatus.value}"
-                _discoveryStatus.value = summary
-                store.saveDiscoverySummary(summary)
-                if (hasAny) _recommendation.value = recommendNow()
-            }.onFailure {
-                _genreLensPreparing.value = false
-                _genreLensReady.value = GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()
-                _genreLensStatus.value = "Genre Lens探索失敗: ${it.message}"
-                _discoveryStatus.value = _genreLensStatus.value
-            }
-            _discovering.value = false
+        if (genres.isEmpty() || store.lastFmApiKey().isBlank()) return
+        lensRefreshJob = viewModelScope.launch {
+            delay(550)
+            // Start the normal discovery job only after the user's rapid toggle sequence has settled.
+            // syncExternalDiscovery owns its lifecycle and always clears the discovering flag.
+            syncExternalDiscovery()
         }
     }
 
@@ -392,62 +294,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return LocalDate.now().toEpochDay() * 31L + lensHash
     }
 
-    private fun lensCandidates(genres: List<String> = activeGenres()): List<MetalArtist> =
-        GenreLensCatalog.filter(allArtists(), genres)
-
-    private fun lensCounts(genres: List<String> = activeGenres()): Map<String, Int> =
-        GenreLensCatalog.countByGenre(allArtists(), genres)
-
-    private fun currentLensPoolSatisfied(): Boolean {
-        val genres = activeGenres()
-        if (genres.isEmpty()) return true
-        val counts = lensCounts(genres)
-        return counts.isNotEmpty() && counts.values.all { it >= minimumLensPoolPerGenre }
-    }
-
-    private fun initialLensReady(): Boolean {
-        val genres = GenreLensCatalog.activeGenres(_genreLens.value)
-        if (genres.isEmpty()) return true
-        val counts = GenreLensCatalog.countByGenre(allArtists(), genres)
-        return counts.isNotEmpty() && counts.values.all { it >= minimumLensPoolPerGenre }
-    }
-
-    private fun initialLensStatus(): String = currentLensStatus()
-
-    private fun currentLensStatus(): String {
-        val genres = activeGenres()
-        if (genres.isEmpty()) return ""
-        val counts = lensCounts(genres)
-        return lensStatusText(genres, counts, currentLensPoolSatisfied())
-    }
-
-    private fun lensStatusText(genres: List<String>, counts: Map<String, Int>, ready: Boolean): String {
-        val detail = genres.joinToString(" / ") { "$it ${counts[it] ?: 0}組" }
-        return if (ready) "Genre Lens候補: $detail" else "Genre Lens候補不足: $detail（各${minimumLensPoolPerGenre}組まで自動補充）"
-    }
-
-    private fun recommendNow(seed: Long = recommendationSeed()): Recommendation {
-        val genres = activeGenres()
-        if (genres.isEmpty()) {
-            return engine.recommend(
-                profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
-                candidates = allArtists(), genreLens = emptyList(), seed = seed
-            )
-        }
-        val strict = lensCandidates(genres)
-        // Keep a safe hidden fallback object while the UI shows the "digging" state.
-        // An off-genre artist is never presented as the active Genre Lens recommendation.
-        if (strict.isEmpty()) {
-            return engine.recommend(
-                profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
-                candidates = allArtists(), genreLens = emptyList(), seed = seed
-            )
-        }
+    private fun recommendAfterLensChange(): Recommendation {
+        val current = runCatching { _recommendation.value.artist.name }.getOrNull()
+        val all = allArtists()
+        val candidates = if (current != null && all.size > 1) all.filterNot { it.name.equals(current, true) } else all
         return engine.recommend(
-            profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
-            candidates = strict, genreLens = genres, seed = seed
+            profile = _profile.value,
+            history = _history.value,
+            searchHistory = _searchHistory.value,
+            candidates = candidates,
+            genreLens = activeGenres(),
+            seed = recommendationSeed()
         )
     }
+
+    private fun recommendNow(seed: Long = recommendationSeed()): Recommendation = engine.recommend(
+        profile = _profile.value,
+        history = _history.value,
+        searchHistory = _searchHistory.value,
+        candidates = allArtists(),
+        genreLens = activeGenres(),
+        seed = seed
+    )
 
     private fun persistAndRefresh() {
         store.saveHistory(_history.value)

@@ -76,7 +76,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.5.2", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.5.1", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -86,80 +86,56 @@ private fun Header(subtitle: String) {
 private fun HomeScreen(vm: MainViewModel) {
     val rec by vm.recommendation.collectAsState()
     val spotifyOpen by vm.spotifyOpenStatus.collectAsState()
-    val lens by vm.genreLens.collectAsState()
-    val lensPreparing by vm.genreLensPreparing.collectAsState()
-    val lensReady by vm.genreLensReady.collectAsState()
-    val lensStatus by vm.genreLensStatus.collectAsState()
-    val activeGenres = GenreLensCatalog.activeGenres(lens)
-    val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
-
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("ジャンルは必須条件。DNAでその地下を選び抜く。") }
-        if (activeGenres.isNotEmpty()) item {
-            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Color(0xFF101010), RoundedCornerShape(16.dp)).padding(12.dp)) {
-                Text("TODAY'S GENRE LENS  ${activeGenres.joinToString(" / ")}", color = Acid, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                if (lensStatus.isNotBlank()) Text(lensStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+        item { Header("DNAは残す。今日は違う沼も掘る。") }
+        if (rec.activeGenres.isNotEmpty()) item {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 0.dp).fillMaxWidth().background(Color(0xFF101010), RoundedCornerShape(16.dp)).padding(12.dp)) {
+                Text("TODAY'S GENRE LENS  ${rec.activeGenres.joinToString(" / ")}", color = Acid, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
             Spacer(Modifier.height(10.dp))
         }
-        if (lensBlocked) {
-            item {
-                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
-                    Text("GENRE LENS DIGGING", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Text(if (lensPreparing) "${activeGenres.joinToString(" / ")} の地下を探索中…" else "${activeGenres.joinToString(" / ")} の候補が不足しています", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.height(10.dp))
-                    Text("指定ジャンル以外は出さない。候補をLocal Metal DBへ補充してから、METAL DNAで今日の1組を選びます。", color = Muted, lineHeight = 20.sp)
-                    if (lensPreparing) {
-                        Spacer(Modifier.height(14.dp))
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
+        item {
+            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
+                Text("TODAY'S おすすメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Spacer(Modifier.height(18.dp))
+                Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
+                Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
+                if (rec.artist.vocalType != VocalType.UNKNOWN) Text(rec.artist.vocalType.label, color = Muted, fontSize = 11.sp)
+                if (rec.artist.source != ArtistSource.BUILTIN) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("🌐 EXTERNAL DISCOVERY  •  Seed: ${rec.artist.sourceSeed ?: "unknown"}  •  HIDDEN ${rec.artist.hiddenScore}", color = Acid, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
-            }
-        } else {
-            item {
-                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
-                    Text("TODAY'S おすすメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Spacer(Modifier.height(18.dp))
-                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
-                    Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
-                    if (rec.artist.vocalType != VocalType.UNKNOWN) Text(rec.artist.vocalType.label, color = Muted, fontSize = 11.sp)
-                    if (rec.artist.source != ArtistSource.BUILTIN) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("🌐 EXTERNAL DISCOVERY  •  Seed: ${rec.artist.sourceSeed ?: "unknown"}  •  HIDDEN ${rec.artist.hiddenScore}", color = Acid, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(22.dp))
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text("${rec.compatibility}%", color = Acid, fontSize = 34.sp, fontWeight = FontWeight.Black)
-                        Text("  DNA MATCH", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
-                    }
-                    Text(rec.reason, color = Color.White, lineHeight = 22.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        rec.matchedTraits.forEach { trait -> SuggestionChip(onClick = {}, label = { Text(trait, fontSize = 11.sp) }) }
-                    }
-                    Spacer(Modifier.height(18.dp))
-                    ScoreBreakdown(rec.breakdown)
-                    if (rec.artist.source != ArtistSource.BUILTIN) {
-                        Spacer(Modifier.height(12.dp))
-                        ExternalMeta(rec.artist)
-                    }
-                    Spacer(Modifier.height(22.dp))
-                    Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.fillMaxWidth()) { Text("Spotifyアーティストページへ") }
-                    if (spotifyOpen.isNotBlank()) Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別の沼も見る") }
+                Spacer(Modifier.height(22.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("${rec.compatibility}%", color = Acid, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                    Text("  DNA MATCH", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
+                Text(rec.reason, color = Color.White, lineHeight = 22.sp)
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    rec.matchedTraits.forEach { trait -> SuggestionChip(onClick = {}, label = { Text(trait, fontSize = 11.sp) }) }
+                }
+                Spacer(Modifier.height(18.dp))
+                ScoreBreakdown(rec.breakdown)
+                if (rec.artist.source != ArtistSource.BUILTIN) {
+                    Spacer(Modifier.height(12.dp))
+                    ExternalMeta(rec.artist)
+                }
+                Spacer(Modifier.height(22.dp))
+                Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.fillMaxWidth()) { Text("Spotifyアーティストページへ") }
+                if (spotifyOpen.isNotBlank()) Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別の沼も見る") }
             }
-            item {
-                Text("聴いた結果を5段階で教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
-                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Reaction.entries.forEach { r ->
-                        OutlinedButton(onClick = { vm.react(r) }, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(r.label, fontWeight = FontWeight.Bold)
-                                Text(r.description, color = Muted, fontSize = 10.sp)
-                            }
+        }
+        item {
+            Text("聴いた結果を5段階で教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
+            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Reaction.entries.forEach { r ->
+                    OutlinedButton(onClick = { vm.react(r) }, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(r.label, fontWeight = FontWeight.Bold)
+                            Text(r.description, color = Muted, fontSize = 10.sp)
                         }
                     }
                 }
@@ -362,9 +338,9 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Strict Genre Lens + Unlimited Local DB / V0.5.2") }
+        item { Header("Unlimited Local DB + 5段階評価 / V0.5.1") }
         item {
-            SettingsCard("GENRE LENS", "指定ジャンルを必須条件にし、そのジャンル内でDNAに合うArtistを選ぶ。候補不足時は先に地下を自動補充する。") {
+            SettingsCard("GENRE LENS", "DNAを主軸に残したまま、今日だけ別ジャンルへ深掘りする。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     GenreLensMode.entries.forEach { mode -> FilterChip(selected = lens.mode == mode, onClick = { vm.setGenreLensMode(mode) }, label = { Text(mode.label) }) }
                 }
@@ -403,7 +379,7 @@ private fun SettingsScreen(vm: MainViewModel) {
         }
         item {
             SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.2.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.1.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

@@ -1,17 +1,5 @@
 # Changelog
 
-## 0.5.2
-
-- Genre Lensを加点方式から必須候補条件へ変更
-- 複数Genre LensはOR条件として扱う
-- 指定ジャンル候補が各10組未満ならLast.fmタグ探索で先に自動補充
-- Genre Lens探索中は別ジャンルの「今日」を表示しない
-- Genre Lens候補数をリアルタイム表示
-- `tag.getTopArtists`由来のジャンル情報をLocal DBへ保持
-- Genre Lens内ではMETAL DNAを主軸にHIDDEN/未知/探索/発掘度で順位付け
-- V0.5.1の無制限Local DB・世界検索・5段階評価・Spotify直行を継続
-- applicationId / SharedPreferences / legacy keysを維持
-
 ## 0.5.1
 
 - Local Metal DBの500 Artist上限を撤廃

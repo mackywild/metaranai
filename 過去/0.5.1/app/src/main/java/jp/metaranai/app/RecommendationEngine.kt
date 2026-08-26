@@ -17,11 +17,7 @@ class RecommendationEngine {
         val seen = history.map { it.artistName.lowercase() }.toSet()
         val searched = searchHistory.take(30).map { it.artistName.lowercase() }.toSet()
         val lensActive = genreLens.isNotEmpty()
-        val unique = candidates.distinctBy { it.name.lowercase() }
-        // V0.5.2: Genre Lens is a WHERE clause, not a score bonus.
-        val eligible = if (lensActive) GenreLensCatalog.filter(unique, genreLens) else unique
-        require(eligible.isNotEmpty()) { "Genre Lens候補がありません: ${genreLens.joinToString(" / ")}" }
-        val ranked = eligible.map { artist ->
+        val ranked = candidates.distinctBy { it.name.lowercase() }.map { artist ->
             val similarity = profile.similarity(artist.vector)
             val lensScore = GenreLensCatalog.score(artist, genreLens)
             val novelty = if (artist.name.lowercase() in seen) 0f else 1f
@@ -30,8 +26,7 @@ class RecommendationEngine {
             val hidden = artist.hiddenScore.coerceIn(0, 100) / 100f
             val discovery = artist.discovery.coerceIn(0f, 1f)
             val score = if (lensActive) {
-                // All candidates already satisfy the requested genre. Personal DNA stays the strongest sorter.
-                similarity * .52f + lensScore * .08f + hidden * .16f + novelty * .11f + exploration * .07f + discovery * .04f + searchInterest * .02f
+                similarity * .45f + lensScore * .20f + hidden * .15f + novelty * .10f + exploration * .05f + discovery * .04f + searchInterest * .01f
             } else {
                 similarity * .50f + hidden * .20f + novelty * .15f + exploration * .10f + discovery * .04f + searchInterest * .01f
             }
@@ -49,13 +44,13 @@ class RecommendationEngine {
         val lensScore = GenreLensCatalog.score(artist, genreLens)
         val breakdown = if (lensActive) {
             RecommendationBreakdown(
-                affinity = (similarity * 52).roundToInt(),
-                genreLens = (lensScore * 8).roundToInt(),
-                hidden = (hidden * 16).roundToInt(),
-                novelty = (novelty * 11).roundToInt(),
-                exploration = (exploration * 7).roundToInt(),
-                discovery = (artist.discovery * 4).roundToInt(),
-                total = (similarity * 52 + lensScore * 8 + hidden * 16 + novelty * 11 + exploration * 7 + artist.discovery * 4).roundToInt()
+                affinity = (similarity * 45).roundToInt(),
+                genreLens = (lensScore * 20).roundToInt(),
+                hidden = (hidden * 15).roundToInt(),
+                novelty = (novelty * 10).roundToInt(),
+                exploration = (exploration * 5).roundToInt(),
+                discovery = (artist.discovery * 5).roundToInt(),
+                total = (similarity * 45 + lensScore * 20 + hidden * 15 + novelty * 10 + exploration * 5 + artist.discovery * 5).roundToInt()
             )
         } else {
             RecommendationBreakdown(
@@ -69,7 +64,7 @@ class RecommendationEngine {
             )
         }
         val traits = strongestMatches(profile, artist.vector)
-        val lensText = if (genreLens.isNotEmpty()) "。Genre Lens必須条件: ${genreLens.joinToString(" / ")}" else ""
+        val lensText = if (genreLens.isNotEmpty()) "。今日のGenre Lens: ${genreLens.joinToString(" / ")}" else ""
         return Recommendation(
             artist = artist,
             compatibility = compatibility,

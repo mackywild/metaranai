@@ -70,28 +70,3 @@ A Genre Lens change:
 | 興味なし | strong move-away | -1.00 |
 
 Legacy `MAYBE` and `MISS` are parsed rather than rewritten destructively.
-
-
-## V0.5.2 Strict Genre Lens
-
-```text
-Genre Lens (required WHERE)
-        ↓
-Local DB genre count
-   ├─ enough → rank now
-   └─ shortage
-        ↓
-Last.fm tag.getTopArtists
-        ↓
-Top Tags / listeners / playcount / MusicBrainz
-        ↓
-Local Metal DB
-        ↓
-strict genre filter
-        ↓
-METAL DNA + HIDDEN + novelty + exploration
-        ↓
-TODAY'S おすすメタル
-```
-
-Genre selection is no longer merely a ranking bonus. An off-genre artist is never displayed while a Genre Lens is active.
