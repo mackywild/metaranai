@@ -1,63 +1,72 @@
-# Architecture v0.5
+# Architecture v0.5.1
 
 ```text
-V0.4 METAL DNA (legacy-compatible)
-        |
-        +-----------------------------+
-        |                             |
-        v                             v
-Genre Lens                     Vocal DNA (new key)
-manual / weekday               male/female/mixed
-        |                             |
-        v                             |
-Last.fm artist.getSimilar             |
-Last.fm tag.getTopArtists <------------+
-        |
-artist.getTopTags / getInfo
-        |
-MusicBrainz normalize
-        |
-External catalog (max 500)
-        |
-Recommendation V5
-  DNA affinity = strongest
-  Genre Lens = optional 20%
-  Hidden / novelty / exploration
-        |
-TODAY'S おすすメタル
-        |
-Spotify GET /search
-  exact artist name match
-        |
-external_urls.spotify
-  | direct match -> Artist page
-  | no match     -> Spotify search fallback
+Spotify Top/Recent ───────────────┐
+                                  │
+5-level feedback ───────────────┐ │
+                               ▼ ▼
+                         METAL DNA / VOCAL DNA
+                               │
+                               ├───────────────┐
+                               ▼               │
+                         Genre Lens            │
+                    (manual / weekday)         │
+                               │               │
+          ┌────────────────────┴───────┐       │
+          ▼                            ▼       │
+Last.fm similar/tag pool       Last.fm artist.search
+          │                            │
+          ▼                            ▼
+     Top Tags / Metal Filter / listeners / playcount
+                         │
+                         ▼
+                    MusicBrainz
+                         │
+                         ▼
+              Unlimited Local Metal DB
+                         │
+                         ▼
+            Recommendation Engine V5.1
+                         │
+                         ▼
+                TODAY'S おすすメタル
+                         │
+               5-level feedback loop
 ```
 
-## Persistence rule
+## Persistence
 
-Legacy keys are a compatibility contract. Never rename or clear them during V0.x upgrades.
+V0.5.1 intentionally keeps the V0.4/V0.5 SharedPreferences file `metaranai` and all legacy keys.
+The external artist JSON remains in `external_artists`, but the previous 500-entry truncation is removed.
 
-New V0.5 keys:
-- `genre_lens_v05`
-- `vocal_profile_v05`
-- `spotify_artist_links_v05`
+## Search
 
-## Recommendation weights
+1. Search Local Metal DB immediately.
+2. User can expand the same query to Last.fm `artist.search`.
+3. Candidate Top Tags are checked for metal relevance.
+4. listeners/playcount and MusicBrainz metadata enrich the candidate.
+5. Accepted candidates are merged into `external_artists` and remain available offline/local-first on later searches.
 
-Genre Lens OFF:
-- DNA affinity 50
-- Hidden 20
-- Novelty 15
-- Exploration 10
-- Discovery 5
+## Genre Lens invalidation
 
-Genre Lens ON:
-- DNA affinity 45
-- Genre Lens 20
-- Hidden 15
-- Novelty 10
-- Exploration 5
-- Discovery 5
+A Genre Lens change:
 
-This guarantees the user remains the same listener even when intentionally exploring another genre.
+1. writes the existing `genre_lens_v05` key,
+2. immediately chooses a new TODAY recommendation using a lens-sensitive seed,
+3. excludes the currently displayed artist when another candidate exists,
+4. debounces for 550 ms,
+5. expands the selected genre pool through Last.fm,
+6. merges new candidates into Local Metal DB,
+7. recalculates TODAY again.
+
+## Five-level feedback
+
+| Reaction | DNA action | Genre signal |
+|---|---|---:|
+| 全部好き | strong blend toward artist | +1.40 |
+| 普通に刺さる | blend toward artist | +1.00 |
+| 何曲か刺さる | weak blend | +0.45 |
+| イマイチ | weak move-away | -0.30 |
+| 興味なし | strong move-away | -1.00 |
+
+Legacy `MAYBE` and `MISS` are parsed rather than rewritten destructively.

@@ -17,11 +17,9 @@ object VocalAnalyzer {
     fun update(current: VocalProfile, type: VocalType, reaction: Reaction): VocalProfile {
         if (type == VocalType.UNKNOWN) return current
         val weight = when (reaction) {
-            Reaction.LOVE_ALL -> .25f
             Reaction.HIT -> .18f
-            Reaction.SOME -> .07f
-            Reaction.MEH -> -.05f
-            Reaction.NO_INTEREST -> -.14f
+            Reaction.MAYBE -> .06f
+            Reaction.MISS -> -.08f
         }
         fun move(value: Float, target: Boolean): Float {
             return if (weight >= 0f) {

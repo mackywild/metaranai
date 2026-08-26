@@ -5,7 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class LocalStore(context: Context) {
-    // Keep the same file and legacy keys. V0.4/V0.5 data must survive an in-place update.
+    // IMPORTANT: keep the same prefs file and legacy keys so V0.4 data survives an in-place update.
     private val prefs = context.getSharedPreferences("metaranai", Context.MODE_PRIVATE)
 
     val defaultProfile = MetalVector(.93f,.80f,.55f,.84f,.57f,.12f,.94f,.92f)
@@ -34,31 +34,10 @@ class LocalStore(context: Context) {
         val raw = prefs.getString("history", "[]") ?: "[]"
         return runCatching {
             val a = JSONArray(raw)
-            (0 until a.length()).mapNotNull { i ->
-                val o = a.optJSONObject(i) ?: return@mapNotNull null
-                val reaction = parseReaction(o.optString("reaction")) ?: return@mapNotNull null
-                DiscoveryRecord(
-                    artistName = o.optString("artist"),
-                    date = o.optString("date"),
-                    reaction = reaction,
-                    score = o.optInt("score", 0)
-                )
+            (0 until a.length()).map { i -> a.getJSONObject(i) }.map {
+                DiscoveryRecord(it.getString("artist"), it.getString("date"), Reaction.valueOf(it.getString("reaction")), it.getInt("score"))
             }
         }.getOrDefault(emptyList())
-    }
-
-    /**
-     * V0.5.1 compatibility:
-     * old HIT remains HIT, old MAYBE becomes SOME, old MISS becomes MEH.
-     * We never upgrade a legacy HIT to LOVE_ALL or downgrade a legacy MISS to NO_INTEREST.
-     */
-    private fun parseReaction(raw: String): Reaction? = when (raw.uppercase()) {
-        "LOVE_ALL" -> Reaction.LOVE_ALL
-        "HIT" -> Reaction.HIT
-        "SOME", "MAYBE" -> Reaction.SOME
-        "MEH", "MISS" -> Reaction.MEH
-        "NO_INTEREST" -> Reaction.NO_INTEREST
-        else -> null
     }
 
     fun saveHistory(records: List<DiscoveryRecord>) {
@@ -81,8 +60,7 @@ class LocalStore(context: Context) {
 
     fun saveSearchHistory(records: List<SearchRecord>) {
         val a = JSONArray()
-        // V0.5.1: search history is no longer truncated. The local archive is an asset.
-        records.forEach { r -> a.put(JSONObject().apply {
+        records.take(50).forEach { r -> a.put(JSONObject().apply {
             put("query", r.query); put("artist", r.artistName); put("dateTime", r.dateTime)
         }) }
         prefs.edit().putString("search_history", a.toString()).apply()
@@ -135,6 +113,7 @@ class LocalStore(context: Context) {
                     ended = if (o.has("ended")) o.optBoolean("ended") else null,
                     hiddenScore = o.optInt("hiddenScore", 50),
                     metadataConfidence = o.optInt("metadataConfidence", 0),
+                    // New in V0.5. Old V0.4 cache has no field, so UNKNOWN is a safe non-destructive default.
                     vocalType = runCatching { VocalType.valueOf(o.optString("vocalType", "UNKNOWN")) }.getOrDefault(VocalType.UNKNOWN)
                 )
             }
@@ -143,8 +122,7 @@ class LocalStore(context: Context) {
 
     fun saveExternalArtists(artists: List<MetalArtist>) {
         val a = JSONArray()
-        // V0.5.1: no artificial 500-artist ceiling. Every discovered/queried metal artist is retained.
-        artists.forEach { artist ->
+        artists.take(500).forEach { artist ->
             a.put(JSONObject().apply {
                 put("name", artist.name); put("country", artist.country); put("discovery", artist.discovery); put("reason", artist.reason)
                 put("source", artist.source.name); put("sourceSeed", artist.sourceSeed ?: ""); artist.externalScore?.let { put("externalScore", it) }
@@ -163,7 +141,7 @@ class LocalStore(context: Context) {
         prefs.edit().putString("external_artists", a.toString()).apply()
     }
 
-    // ----- V0.5+ additive keys. Legacy keys above are never renamed/cleared. -----
+    // ----- V0.5-only keys below. Legacy values above are never renamed/cleared. -----
 
     fun loadVocalProfile(): VocalProfile {
         val raw = prefs.getString("vocal_profile_v05", null) ?: return VocalProfile()
@@ -232,7 +210,7 @@ class LocalStore(context: Context) {
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 51)
+        out.put("version", 5)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {

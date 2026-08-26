@@ -1,52 +1,42 @@
 name: Android APK
-
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      METARANAI_KEYSTORE_B64: ${{ secrets.METARANAI_KEYSTORE_B64 }}
-      METARANAI_KEYSTORE_PASSWORD: ${{ secrets.METARANAI_KEYSTORE_PASSWORD }}
-      METARANAI_KEY_ALIAS: ${{ secrets.METARANAI_KEY_ALIAS }}
-      METARANAI_KEY_PASSWORD: ${{ secrets.METARANAI_KEY_PASSWORD }}
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - uses: android-actions/setup-android@v4
-
       - name: Install Android 16 SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
 
       - name: Restore stable signing key
-        if: ${{ env.METARANAI_KEYSTORE_B64 != '' }}
-        run: |
-          printf '%s' "$METARANAI_KEYSTORE_B64" | base64 --decode > "$GITHUB_WORKSPACE/metaranai-release.jks"
+        if: ${{ secrets.METARANAI_KEYSTORE_B64 != '' }}
+        run: echo "${{ secrets.METARANAI_KEYSTORE_B64 }}" | base64 --decode > "$GITHUB_WORKSPACE/metaranai-release.jks"
 
       - name: Build signed release APK
-        if: ${{ env.METARANAI_KEYSTORE_B64 != '' }}
+        if: ${{ secrets.METARANAI_KEYSTORE_B64 != '' }}
         env:
           METARANAI_KEYSTORE_PATH: ${{ github.workspace }}/metaranai-release.jks
+          METARANAI_KEYSTORE_PASSWORD: ${{ secrets.METARANAI_KEYSTORE_PASSWORD }}
+          METARANAI_KEY_ALIAS: ${{ secrets.METARANAI_KEY_ALIAS }}
+          METARANAI_KEY_PASSWORD: ${{ secrets.METARANAI_KEY_PASSWORD }}
         run: gradle :app:assembleRelease
 
       - name: Build debug APK fallback
-        if: ${{ env.METARANAI_KEYSTORE_B64 == '' }}
+        if: ${{ secrets.METARANAI_KEYSTORE_B64 == '' }}
         run: gradle :app:assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.5.1-apk
+          name: metaranai-v0.5-apk
           path: app/build/outputs/apk/**/*.apk

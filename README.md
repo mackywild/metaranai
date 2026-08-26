@@ -1,76 +1,44 @@
-# メタらない？ v0.5.0
+# メタらない？ v0.5.1
 
-「自分のMetal DNAを忘れず、曜日や気分で別ジャンルの地下へ潜る」Android向け個人音楽発掘アプリ。
+「まだ知らない、自分に刺さるMetal」を掘るAndroidアプリ。
 
-## V0.5の主な追加
+## V0.5.1の柱
 
-- **Spotify Artist Direct**
-  - Spotify Web API `GET /search` でArtist完全一致を照合する
-  - 一致した場合 `external_urls.spotify` へ直接遷移
-  - Spotifyに存在しない/未認証/照合失敗時は従来のSpotify検索へ安全にフォールバック
-  - 解決済みURLはローカルキャッシュ
+1. **Unlimited Local Metal DB**  
+   Last.fm / MusicBrainz / Spotify照合で得たArtistを端末へ蓄積。500組上限を撤廃。
 
-- **Genre Lens**
-  - OFF / 手動 / 曜日モード
-  - 15ジャンルから複数選択
-  - 元のMETAL DNAを最重要シグナルとして維持しつつ、指定ジャンルを20%の探索レンズとして加算
-  - Genre Lens有効時の外部発掘はLast.fm `tag.getTopArtists` からも候補を取得し、そのジャンル自体の地下へ潜る
+2. **5段階評価**  
+   `全部好き / 普通に刺さる / 何曲か刺さる / イマイチ / 興味なし` をMETAL DNA・VOCAL DNA・Genre分析へ反映。
 
-- **曜日別ジャンル**
-  - 月〜日の各曜日へ複数ジャンル登録
-  - 例: 火曜 = Gothic Metal + Symphonic Metal / 金曜 = Metalcore + Melodic Death Metal
+3. **Global Artist Search**  
+   端末DBにいないArtistはLast.fm `artist.search`で外部探索。Metal判定後にLocal DBへ保存。
 
-- **VOCAL DNA**
-  - 男性Vo / 女性Vo / 混成Vo
-  - Last.fm Top Tagsから判定可能な候補を学習
-  - HIT/MAYBE/MISSで独立プロファイル更新
-  - V0.4の8軸METAL DNAは変更しない
-  - 十分なVo観測が貯まると既存のタイプ名へ「女性Vo偏愛」等を追加
+4. **Genre Lens即時更新**  
+   Lens切替時に「今日のおすすメタル」を即時再計算し、裏で対象ジャンルの外部候補も補充。
 
-- **LISTENING MAP**
-  - V0.4までの既存評価履歴を再利用して、現在の上位ジャンル傾向を表示
+5. **V0.4/V0.5データ互換**  
+   `applicationId = jp.metaranai.app`、SharedPreferences `metaranai`、既存キーを維持。
 
-- **Data Safety**
-  - V0.4の保存先・保存キーを完全維持
-  - V0.5専用データは新規キーに追加
-  - JSONバックアップ/復元をアプリ内に追加
-  - `android:hasFragileUserData="true"` を追加
+## 旧3段階評価の移行
 
-## 更新互換性
+- `HIT` → `🔥 普通に刺さる`
+- `MAYBE` → `🎵 何曲か刺さる`
+- `MISS` → `😐 イマイチ`
 
-`applicationId` はV0.4と同じ `jp.metaranai.app`、SharedPreferences名も `metaranai` のままです。
+旧データから`全部好き`や`興味なし`を勝手に生成しない。
 
-**同じ署名鍵のAPKなら、通常の上書きインストールで既存の50件以上の分析データを保持します。**
+## Build
 
-ただしGitHub Actionsのdebug APKは実行ごとにdebug署名が変わる可能性があるため、V0.4からの初回更新前は `UPDATE_FROM_V0.4.md` のADBバックアップを必ず推奨します。
+GitHub Actions: `.github/workflows/android.yml`
 
-## ビルド
-
-- compileSdk 36
-- targetSdk 36
-- minSdk 26
-- AGP 9.3.1
-- Gradle 9.5.0 (GitHub Actions)
+- Android API 36
 - Java 17
-- Compose BOM 2026.04.01
+- Gradle 9.5.0
+- versionCode 6
+- versionName 0.5.1
 
-GitHubへpushすると `.github/workflows/android.yml` で `app-debug.apk` を生成します。
+固定署名Secretsがあればrelease APK、無ければdebug APKを生成する。
 
-## Spotify Redirect URI
+## Update safety
 
-```
-http://127.0.0.1:8888/callback
-```
-
-Spotify Developer Dashboard側にも完全一致で登録してください。
-
-## V0.6候補
-
-- YouTube Data APIによる公式MV/楽曲候補
-- Spotify未収録Artistの再生導線強化
-- Vocal判定の追加データソース
-- 動的命名パターン拡張
-- Genre Lensの重み調整UI
-
-## 署名を固定する
-V0.5以降を毎回確実に上書き更新する場合は `STABLE_SIGNING.md` を参照してください。
+既存APKと同じ署名なら通常の上書き更新でデータを保持できる。署名が異なる場合は、旧データをバックアップしてから移行すること。詳細は `DATA_COMPATIBILITY.md` / `STABLE_SIGNING.md` を参照。

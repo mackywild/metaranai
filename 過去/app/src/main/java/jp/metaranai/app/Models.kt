@@ -83,25 +83,8 @@ data class MetalArtist(
     val vocalType: VocalType = VocalType.UNKNOWN
 )
 
-/**
- * V0.5.1 five-level feedback.
- * Legacy V0.5 records are migrated by LocalStore:
- * HIT -> HIT, MAYBE -> SOME, MISS -> MEH.
- */
-enum class Reaction(
-    val label: String,
-    val description: String,
-    val affinityScore: Int,
-    val genreWeight: Float
-) {
-    LOVE_ALL("💘 全部好き", "アルバム単位でかなり刺さる", 100, 1.40f),
-    HIT("🔥 普通に刺さる", "明確に好み", 80, 1.00f),
-    SOME("🎵 何曲か刺さる", "一部の曲が刺さる", 60, .45f),
-    MEH("😐 イマイチ", "あまり合わない", 30, -.30f),
-    NO_INTEREST("💀 興味なし", "フルで聴く気にならない", 0, -1.00f);
-
-    val isPositive: Boolean get() = this == LOVE_ALL || this == HIT || this == SOME
-    val isStrongPositive: Boolean get() = this == LOVE_ALL || this == HIT
+enum class Reaction(val label: String) {
+    HIT("🔥 刺さった"), MAYBE("🤔 微妙"), MISS("💀 刺さらない")
 }
 
 data class DiscoveryRecord(
@@ -144,10 +127,8 @@ data class Recommendation(
 
 data class DiscoveryStats(
     val total: Int,
-    val favorites: Int,
-    val positives: Int,
-    val positiveRate: Int,
-    val averageAffinity: Int,
+    val hits: Int,
+    val hitRate: Int,
     val streakDays: Int
 )
 
@@ -162,12 +143,4 @@ data class SpotifyArtistDestination(
     val url: String,
     val direct: Boolean,
     val artistId: String? = null
-)
-
-data class ArtistSearchResult(
-    val query: String,
-    val fetched: Int,
-    val accepted: Int,
-    val results: List<MetalArtist>,
-    val cachedArtists: List<MetalArtist>
 )

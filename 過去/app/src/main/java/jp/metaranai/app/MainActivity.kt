@@ -76,7 +76,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.5.1", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.5", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -129,15 +129,10 @@ private fun HomeScreen(vm: MainViewModel) {
             }
         }
         item {
-            Text("聴いた結果を5段階で教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
-            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("聴いた結果を教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
+            Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Reaction.entries.forEach { r ->
-                    OutlinedButton(onClick = { vm.react(r) }, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(r.label, fontWeight = FontWeight.Bold)
-                            Text(r.description, color = Muted, fontSize = 10.sp)
-                        }
-                    }
+                    AssistChip(onClick = { vm.react(r) }, label = { Text(r.label, fontSize = 11.sp) }, modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -182,44 +177,20 @@ private fun ExternalMeta(a: MetalArtist) {
 @Composable
 private fun SearchScreen(vm: MainViewModel) {
     val history by vm.searchHistory.collectAsState()
-    val remote by vm.remoteSearchResults.collectAsState()
-    val remoteSearching by vm.remoteSearching.collectAsState()
-    val remoteStatus by vm.remoteSearchStatus.collectAsState()
-    val external by vm.externalArtists.collectAsState()
     var query by remember { mutableStateOf("") }
-    val localResults = remember(query, external) { vm.search(query) }
-    val merged = (localResults + remote).distinctBy { it.name.lowercase() }
+    val results = remember(query) { vm.search(query) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("端末DBに無ければ、世界から掘って覚える。") }
+        item { Header("検索結果からもArtistページへ直行。") }
         item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it; vm.clearRemoteSearch() },
-                singleLine = true,
-                label = { Text("バンド / 国 / ジャンル") },
-                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { vm.searchExternal(query) },
-                enabled = query.trim().length >= 2 && !remoteSearching,
-                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
-            ) { Text(if (remoteSearching) "世界のMetal DBを探索中…" else "ローカルに無ければ世界から検索") }
-            if (remoteStatus.isNotBlank()) Text(remoteStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
-            Text(
-                if (query.isBlank()) "Local Metal DBから発掘度の高い候補" else "検索結果 ${merged.size}件",
-                color = Muted, modifier = Modifier.padding(horizontal = 20.dp)
-            )
+            OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, label = { Text("バンド / 国 / ジャンル") }, modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
+            Spacer(Modifier.height(12.dp))
+            Text(if (query.isBlank()) "発掘度の高い候補" else "検索結果 ${results.size}件", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
         }
-        items(merged) { artist ->
+        items(results) { artist ->
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp)) {
                 Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
-                Text(
-                    "発掘度 ${(artist.discovery * 100).toInt()}%${if (artist.source != ArtistSource.BUILTIN) "  •  🌐 HIDDEN ${artist.hiddenScore}" else ""}",
-                    color = Acid, fontSize = 12.sp
-                )
-                if (artist.sourceSeed?.startsWith("Search:") == true) Text("🌐 外部検索からLocal DBへ保存済み", color = Muted, fontSize = 10.sp)
+                Text("発掘度 ${(artist.discovery * 100).toInt()}%${if (artist.source != ArtistSource.BUILTIN) "  •  🌐 HIDDEN ${artist.hiddenScore}" else ""}", color = Acid, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = {
                     vm.recordSearch(query.ifBlank { "discover" }, artist)
@@ -230,7 +201,7 @@ private fun SearchScreen(vm: MainViewModel) {
         if (history.isNotEmpty()) item {
             Spacer(Modifier.height(10.dp))
             Text("最近の探索", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 8.dp))
-            Text(history.take(8).joinToString("  •  ") { it.artistName }, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+            Text(history.take(5).joinToString("  •  ") { it.artistName }, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
         }
     }
 }
@@ -240,10 +211,10 @@ private fun HistoryScreen(vm: MainViewModel) {
     val history by vm.history.collectAsState()
     val stats = vm.stats()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("V0.4/V0.5の履歴を5段階へ安全移行。") }
+        item { Header("V0.4までの履歴も、そのまま財産。") }
         item {
             Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("発掘", stats.total.toString(), Modifier.weight(1f)); StatCard("全部好き", stats.favorites.toString(), Modifier.weight(1f)); StatCard("好評価", "${stats.positiveRate}%", Modifier.weight(1f)); StatCard("平均", stats.averageAffinity.toString(), Modifier.weight(1f))
+                StatCard("発掘", stats.total.toString(), Modifier.weight(1f)); StatCard("HIT", stats.hits.toString(), Modifier.weight(1f)); StatCard("刺さり率", "${stats.hitRate}%", Modifier.weight(1f)); StatCard("連続", "${stats.streakDays}日", Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -338,7 +309,7 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Unlimited Local DB + 5段階評価 / V0.5.1") }
+        item { Header("Genre Lens + Direct Spotify / V0.5") }
         item {
             SettingsCard("GENRE LENS", "DNAを主軸に残したまま、今日だけ別ジャンルへ深掘りする。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -360,11 +331,11 @@ private fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
         }
         item {
-            SettingsCard("HIDDEN DISCOVERY ENGINE", "Last.fm + MusicBrainzで地下を掘り、取得ArtistをLocal DBへ蓄積し続ける。") {
+            SettingsCard("HIDDEN DISCOVERY ENGINE", "Last.fm + MusicBrainzで地下を掘る。VoタグもV0.5から解析する。") {
                 OutlinedTextField(value = lastFmKey, onValueChange = { lastFmKey = it }, label = { Text("Last.fm API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(10.dp))
                 Button(onClick = { vm.saveLastFmApiKey(lastFmKey); vm.syncExternalDiscovery() }, enabled = !discovering, modifier = Modifier.fillMaxWidth()) { Text(if (discovering) "外部を掘削中…" else "未知のMetalを発掘") }
-                Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)); Text("Local Metal DB: ${external.size} external artists / 上限なし", color = Color.White, fontSize = 11.sp)
+                Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)); Text("External cache: ${external.size} artists / max 500", color = Color.White, fontSize = 11.sp)
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -378,8 +349,8 @@ private fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
         }
         item {
-            SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.1.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+            SettingsCard("DATA SAFETY", "V0.4のprofile/history等は同じSharedPreferencesキーを継続使用。V0.5以降はJSON退避も可能。") {
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

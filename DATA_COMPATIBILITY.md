@@ -1,19 +1,24 @@
-# Data compatibility contract: V0.4 → V0.5
+# Data compatibility contract: V0.4 / V0.5 → V0.5.1
 
-V0.5 intentionally treats V0.4 local data as a compatibility contract.
+V0.5.1 is an additive update. Existing analysis data remains the compatibility contract.
 
-| Item | V0.4 | V0.5 |
+| Item | Existing data | V0.5.1 behavior |
 |---|---|---|
-| applicationId | jp.metaranai.app | jp.metaranai.app |
-| prefs file | metaranai | metaranai |
-| profile | same JSON schema | unchanged |
-| history | same JSON schema | unchanged |
-| search_history | same JSON schema | unchanged |
-| external_artists | V0.4 fields | backward-compatible; vocalType optional |
+| applicationId | `jp.metaranai.app` | unchanged |
+| prefs file | `metaranai` | unchanged |
+| `profile` | existing Metal DNA JSON | unchanged |
+| `history` | V0.4/V0.5 records | loaded and preserved |
+| old `HIT` | 刺さった | maps to `普通に刺さる` |
+| old `MAYBE` | 微妙 | maps to `何曲か刺さる` |
+| old `MISS` | 刺さらない | maps to `イマイチ` |
+| `search_history` | existing history | preserved; V0.5.1 no longer truncates new saves |
+| `external_artists` | existing external cache | preserved; 500 artist cap removed |
 | Spotify credentials/tokens | legacy keys | unchanged |
 | Last.fm API key | legacy key | unchanged |
-| Genre Lens | none | new key genre_lens_v05 |
-| Vocal DNA | none | new key vocal_profile_v05 |
-| Spotify direct-link cache | none | new key spotify_artist_links_v05 |
+| Genre Lens | `genre_lens_v05` | unchanged |
+| Vocal DNA | `vocal_profile_v05` | unchanged |
+| Spotify direct-link cache | `spotify_artist_links_v05` | unchanged |
 
-No destructive migration is performed. Missing V0.5 fields use safe defaults.
+V0.5.1 never infers the two new extreme ratings from old data. A legacy HIT is **not** promoted to `全部好き`, and a legacy MISS is **not** demoted to `興味なし`.
+
+No `SharedPreferences.clear()` or destructive migration is performed.

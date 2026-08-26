@@ -13,9 +13,8 @@ class RecommendationEngine {
         genreLens: List<String> = emptyList(),
         seed: Long = LocalDate.now().toEpochDay()
     ): Recommendation {
-        require(candidates.isNotEmpty()) { "推薦候補がありません" }
         val seen = history.map { it.artistName.lowercase() }.toSet()
-        val searched = searchHistory.take(30).map { it.artistName.lowercase() }.toSet()
+        val searched = searchHistory.take(15).map { it.artistName.lowercase() }.toSet()
         val lensActive = genreLens.isNotEmpty()
         val ranked = candidates.distinctBy { it.name.lowercase() }.map { artist ->
             val similarity = profile.similarity(artist.vector)
@@ -26,6 +25,7 @@ class RecommendationEngine {
             val hidden = artist.hiddenScore.coerceIn(0, 100) / 100f
             val discovery = artist.discovery.coerceIn(0f, 1f)
             val score = if (lensActive) {
+                // V0.5: your DNA is still the strongest signal; genre is a lens, not a replacement personality.
                 similarity * .45f + lensScore * .20f + hidden * .15f + novelty * .10f + exploration * .05f + discovery * .04f + searchInterest * .01f
             } else {
                 similarity * .50f + hidden * .20f + novelty * .15f + exploration * .10f + discovery * .04f + searchInterest * .01f
@@ -33,7 +33,7 @@ class RecommendationEngine {
             artist to score
         }.sortedByDescending { it.second }
 
-        val pool = ranked.filter { it.first.name.lowercase() !in seen }.take(12).ifEmpty { ranked.take(12) }
+        val pool = ranked.filter { it.first.name.lowercase() !in seen }.take(10).ifEmpty { ranked.take(10) }
         val selected = pool[Math.floorMod(seed, pool.size.toLong()).toInt()]
         val artist = selected.first
         val similarity = profile.similarity(artist.vector)
@@ -75,18 +75,15 @@ class RecommendationEngine {
         )
     }
 
-    /** V0.5.1: five levels with asymmetric learning weights. */
     fun updatedProfile(current: MetalVector, artist: MetalArtist, reaction: Reaction): MetalVector = when (reaction) {
-        Reaction.LOVE_ALL -> current.blend(artist.vector, .28f)
         Reaction.HIT -> current.blend(artist.vector, .18f)
-        Reaction.SOME -> current.blend(artist.vector, .07f)
-        Reaction.MEH -> moveAway(current, artist.vector, .06f)
-        Reaction.NO_INTEREST -> moveAway(current, artist.vector, .18f)
+        Reaction.MAYBE -> current.blend(artist.vector, .05f)
+        Reaction.MISS -> moveAway(current, artist.vector, .10f)
     }
 
     fun profileFromInterest(current: MetalVector, artist: MetalArtist): MetalVector = current.blend(artist.vector, .025f)
 
-    fun dnaType(v: MetalVector, vocal: VocalProfile = VocalProfile(), history: List<DiscoveryRecord> = emptyList()): String {
+    fun dnaType(v: MetalVector, vocal: VocalProfile = VocalProfile()): String {
         val melodic = (v.melody + v.catchy + v.cleanVocal) / 3f
         val base = when {
             melodic > .88f && v.speed > .78f && v.symphonic > .72f -> "天空疾走型メロディックメタラー"
@@ -97,25 +94,7 @@ class RecommendationEngine {
             melodic > .82f -> "旋律至上型メロディックメタラー"
             else -> "探索型オールラウンドメタラー"
         }
-        val qualifiers = buildList {
-            listeningQualifier(history)?.let(::add)
-            VocalAnalyzer.qualifier(vocal)?.let(::add)
-        }
-        return if (qualifiers.isEmpty()) base else "${qualifiers.joinToString("・")}・$base"
-    }
-
-    private fun listeningQualifier(history: List<DiscoveryRecord>): String? {
-        if (history.size < 8) return null
-        val total = history.size.toFloat()
-        val love = history.count { it.reaction == Reaction.LOVE_ALL } / total
-        val selective = history.count { it.reaction == Reaction.SOME } / total
-        val reject = history.count { it.reaction == Reaction.MEH || it.reaction == Reaction.NO_INTEREST } / total
-        return when {
-            love >= .25f -> "全曲没入型"
-            selective >= .40f -> "選曲発掘型"
-            reject >= .45f -> "厳選審美型"
-            else -> null
-        }
+        return VocalAnalyzer.qualifier(vocal)?.let { "$it・$base" } ?: base
     }
 
     private fun explorationScore(profile: MetalVector, artist: MetalVector): Float {
