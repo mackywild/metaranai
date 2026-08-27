@@ -76,7 +76,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.5", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.5.2", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -86,53 +86,82 @@ private fun Header(subtitle: String) {
 private fun HomeScreen(vm: MainViewModel) {
     val rec by vm.recommendation.collectAsState()
     val spotifyOpen by vm.spotifyOpenStatus.collectAsState()
+    val lens by vm.genreLens.collectAsState()
+    val lensPreparing by vm.genreLensPreparing.collectAsState()
+    val lensReady by vm.genreLensReady.collectAsState()
+    val lensStatus by vm.genreLensStatus.collectAsState()
+    val activeGenres = GenreLensCatalog.activeGenres(lens)
+    val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("DNAは残す。今日は違う沼も掘る。") }
-        if (rec.activeGenres.isNotEmpty()) item {
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 0.dp).fillMaxWidth().background(Color(0xFF101010), RoundedCornerShape(16.dp)).padding(12.dp)) {
-                Text("TODAY'S GENRE LENS  ${rec.activeGenres.joinToString(" / ")}", color = Acid, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        item { Header("ジャンルは必須条件。DNAでその地下を選び抜く。") }
+        if (activeGenres.isNotEmpty()) item {
+            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Color(0xFF101010), RoundedCornerShape(16.dp)).padding(12.dp)) {
+                Text("TODAY'S GENRE LENS  ${activeGenres.joinToString(" / ")}", color = Acid, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                if (lensStatus.isNotBlank()) Text(lensStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
             }
             Spacer(Modifier.height(10.dp))
         }
-        item {
-            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
-                Text("TODAY'S おすすメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Spacer(Modifier.height(18.dp))
-                Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
-                Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
-                if (rec.artist.vocalType != VocalType.UNKNOWN) Text(rec.artist.vocalType.label, color = Muted, fontSize = 11.sp)
-                if (rec.artist.source != ArtistSource.BUILTIN) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("🌐 EXTERNAL DISCOVERY  •  Seed: ${rec.artist.sourceSeed ?: "unknown"}  •  HIDDEN ${rec.artist.hiddenScore}", color = Acid, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        if (lensBlocked) {
+            item {
+                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
+                    Text("GENRE LENS DIGGING", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Text(if (lensPreparing) "${activeGenres.joinToString(" / ")} の地下を探索中…" else "${activeGenres.joinToString(" / ")} の候補が不足しています", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.height(10.dp))
+                    Text("指定ジャンル以外は出さない。候補をLocal Metal DBへ補充してから、METAL DNAで今日の1組を選びます。", color = Muted, lineHeight = 20.sp)
+                    if (lensPreparing) {
+                        Spacer(Modifier.height(14.dp))
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
                 }
-                Spacer(Modifier.height(22.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${rec.compatibility}%", color = Acid, fontSize = 34.sp, fontWeight = FontWeight.Black)
-                    Text("  DNA MATCH", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
-                }
-                Text(rec.reason, color = Color.White, lineHeight = 22.sp)
-                Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    rec.matchedTraits.forEach { trait -> SuggestionChip(onClick = {}, label = { Text(trait, fontSize = 11.sp) }) }
-                }
-                Spacer(Modifier.height(18.dp))
-                ScoreBreakdown(rec.breakdown)
-                if (rec.artist.source != ArtistSource.BUILTIN) {
-                    Spacer(Modifier.height(12.dp))
-                    ExternalMeta(rec.artist)
-                }
-                Spacer(Modifier.height(22.dp))
-                Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.fillMaxWidth()) { Text("Spotifyアーティストページへ") }
-                if (spotifyOpen.isNotBlank()) Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別の沼も見る") }
             }
-        }
-        item {
-            Text("聴いた結果を教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
-            Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Reaction.entries.forEach { r ->
-                    AssistChip(onClick = { vm.react(r) }, label = { Text(r.label, fontSize = 11.sp) }, modifier = Modifier.weight(1f))
+        } else {
+            item {
+                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
+                    Text("TODAY'S おすすメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Spacer(Modifier.height(18.dp))
+                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
+                    Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
+                    if (rec.artist.vocalType != VocalType.UNKNOWN) Text(rec.artist.vocalType.label, color = Muted, fontSize = 11.sp)
+                    if (rec.artist.source != ArtistSource.BUILTIN) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("🌐 EXTERNAL DISCOVERY  •  Seed: ${rec.artist.sourceSeed ?: "unknown"}  •  HIDDEN ${rec.artist.hiddenScore}", color = Acid, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(22.dp))
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("${rec.compatibility}%", color = Acid, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                        Text("  DNA MATCH", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+                    }
+                    Text(rec.reason, color = Color.White, lineHeight = 22.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rec.matchedTraits.forEach { trait -> SuggestionChip(onClick = {}, label = { Text(trait, fontSize = 11.sp) }) }
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    ScoreBreakdown(rec.breakdown)
+                    if (rec.artist.source != ArtistSource.BUILTIN) {
+                        Spacer(Modifier.height(12.dp))
+                        ExternalMeta(rec.artist)
+                    }
+                    Spacer(Modifier.height(22.dp))
+                    Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.fillMaxWidth()) { Text("Spotifyアーティストページへ") }
+                    if (spotifyOpen.isNotBlank()) Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別の沼も見る") }
+                }
+            }
+            item {
+                Text("聴いた結果を5段階で教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
+                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Reaction.entries.forEach { r ->
+                        OutlinedButton(onClick = { vm.react(r) }, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(r.label, fontWeight = FontWeight.Bold)
+                                Text(r.description, color = Muted, fontSize = 10.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -177,20 +206,44 @@ private fun ExternalMeta(a: MetalArtist) {
 @Composable
 private fun SearchScreen(vm: MainViewModel) {
     val history by vm.searchHistory.collectAsState()
+    val remote by vm.remoteSearchResults.collectAsState()
+    val remoteSearching by vm.remoteSearching.collectAsState()
+    val remoteStatus by vm.remoteSearchStatus.collectAsState()
+    val external by vm.externalArtists.collectAsState()
     var query by remember { mutableStateOf("") }
-    val results = remember(query) { vm.search(query) }
+    val localResults = remember(query, external) { vm.search(query) }
+    val merged = (localResults + remote).distinctBy { it.name.lowercase() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("検索結果からもArtistページへ直行。") }
+        item { Header("端末DBに無ければ、世界から掘って覚える。") }
         item {
-            OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, label = { Text("バンド / 国 / ジャンル") }, modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
-            Spacer(Modifier.height(12.dp))
-            Text(if (query.isBlank()) "発掘度の高い候補" else "検索結果 ${results.size}件", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it; vm.clearRemoteSearch() },
+                singleLine = true,
+                label = { Text("バンド / 国 / ジャンル") },
+                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { vm.searchExternal(query) },
+                enabled = query.trim().length >= 2 && !remoteSearching,
+                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
+            ) { Text(if (remoteSearching) "世界のMetal DBを探索中…" else "ローカルに無ければ世界から検索") }
+            if (remoteStatus.isNotBlank()) Text(remoteStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+            Text(
+                if (query.isBlank()) "Local Metal DBから発掘度の高い候補" else "検索結果 ${merged.size}件",
+                color = Muted, modifier = Modifier.padding(horizontal = 20.dp)
+            )
         }
-        items(results) { artist ->
+        items(merged) { artist ->
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp)) {
                 Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
-                Text("発掘度 ${(artist.discovery * 100).toInt()}%${if (artist.source != ArtistSource.BUILTIN) "  •  🌐 HIDDEN ${artist.hiddenScore}" else ""}", color = Acid, fontSize = 12.sp)
+                Text(
+                    "発掘度 ${(artist.discovery * 100).toInt()}%${if (artist.source != ArtistSource.BUILTIN) "  •  🌐 HIDDEN ${artist.hiddenScore}" else ""}",
+                    color = Acid, fontSize = 12.sp
+                )
+                if (artist.sourceSeed?.startsWith("Search:") == true) Text("🌐 外部検索からLocal DBへ保存済み", color = Muted, fontSize = 10.sp)
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = {
                     vm.recordSearch(query.ifBlank { "discover" }, artist)
@@ -201,7 +254,7 @@ private fun SearchScreen(vm: MainViewModel) {
         if (history.isNotEmpty()) item {
             Spacer(Modifier.height(10.dp))
             Text("最近の探索", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 8.dp))
-            Text(history.take(5).joinToString("  •  ") { it.artistName }, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+            Text(history.take(8).joinToString("  •  ") { it.artistName }, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
         }
     }
 }
@@ -211,10 +264,10 @@ private fun HistoryScreen(vm: MainViewModel) {
     val history by vm.history.collectAsState()
     val stats = vm.stats()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("V0.4までの履歴も、そのまま財産。") }
+        item { Header("V0.4/V0.5の履歴を5段階へ安全移行。") }
         item {
             Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("発掘", stats.total.toString(), Modifier.weight(1f)); StatCard("HIT", stats.hits.toString(), Modifier.weight(1f)); StatCard("刺さり率", "${stats.hitRate}%", Modifier.weight(1f)); StatCard("連続", "${stats.streakDays}日", Modifier.weight(1f))
+                StatCard("発掘", stats.total.toString(), Modifier.weight(1f)); StatCard("全部好き", stats.favorites.toString(), Modifier.weight(1f)); StatCard("好評価", "${stats.positiveRate}%", Modifier.weight(1f)); StatCard("平均", stats.averageAffinity.toString(), Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -309,9 +362,9 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Genre Lens + Direct Spotify / V0.5") }
+        item { Header("Strict Genre Lens + Unlimited Local DB / V0.5.2") }
         item {
-            SettingsCard("GENRE LENS", "DNAを主軸に残したまま、今日だけ別ジャンルへ深掘りする。") {
+            SettingsCard("GENRE LENS", "指定ジャンルを必須条件にし、そのジャンル内でDNAに合うArtistを選ぶ。候補不足時は先に地下を自動補充する。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     GenreLensMode.entries.forEach { mode -> FilterChip(selected = lens.mode == mode, onClick = { vm.setGenreLensMode(mode) }, label = { Text(mode.label) }) }
                 }
@@ -331,11 +384,11 @@ private fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
         }
         item {
-            SettingsCard("HIDDEN DISCOVERY ENGINE", "Last.fm + MusicBrainzで地下を掘る。VoタグもV0.5から解析する。") {
+            SettingsCard("HIDDEN DISCOVERY ENGINE", "Last.fm + MusicBrainzで地下を掘り、取得ArtistをLocal DBへ蓄積し続ける。") {
                 OutlinedTextField(value = lastFmKey, onValueChange = { lastFmKey = it }, label = { Text("Last.fm API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(10.dp))
                 Button(onClick = { vm.saveLastFmApiKey(lastFmKey); vm.syncExternalDiscovery() }, enabled = !discovering, modifier = Modifier.fillMaxWidth()) { Text(if (discovering) "外部を掘削中…" else "未知のMetalを発掘") }
-                Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)); Text("External cache: ${external.size} artists / max 500", color = Color.White, fontSize = 11.sp)
+                Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)); Text("Local Metal DB: ${external.size} external artists / 上限なし", color = Color.White, fontSize = 11.sp)
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -349,8 +402,8 @@ private fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
         }
         item {
-            SettingsCard("DATA SAFETY", "V0.4のprofile/history等は同じSharedPreferencesキーを継続使用。V0.5以降はJSON退避も可能。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+            SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.2.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

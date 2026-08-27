@@ -13,7 +13,18 @@ object GenreLensCatalog {
         Lens("Gothic Metal", MetalVector(.73f,.44f,.70f,.78f,.44f,.40f,.75f,.60f), listOf("gothic metal", "gothic")),
         Lens("Metalcore", MetalVector(.64f,.73f,.86f,.25f,.62f,.70f,.55f,.64f), listOf("metalcore")),
         Lens("Melodic Death Metal", MetalVector(.83f,.77f,.83f,.46f,.66f,.80f,.40f,.67f), listOf("melodic death metal", "melodeath")),
-        Lens("Progressive Metal", MetalVector(.72f,.58f,.72f,.43f,.94f,.34f,.75f,.53f), listOf("progressive metal", "prog metal")),
+        Lens("Progressive Metal", MetalVector(.72f,.58f,.72f,.43f,.94f,.34f,.75f,.53f), listOf(
+            "progressive metal", "prog metal", "progressive death metal", "progressive power metal", "technical progressive metal"
+        )),
+        Lens("Glam Metal", MetalVector(.84f,.66f,.58f,.24f,.43f,.08f,.94f,.94f), listOf(
+            "glam metal", "hair metal", "sleaze metal", "sleaze rock", "glam rock"
+        )),
+        Lens("Japanese Metal", MetalVector(.72f,.64f,.66f,.44f,.55f,.24f,.76f,.72f), listOf(
+            "japanese metal", "j-metal", "japanese heavy metal"
+        )),
+        Lens("Nu Metal", MetalVector(.50f,.45f,.90f,.12f,.42f,.55f,.56f,.78f), listOf(
+            "nu metal", "nü metal", "rap metal"
+        )),
         Lens("Folk Metal", MetalVector(.82f,.68f,.67f,.55f,.48f,.35f,.73f,.77f), listOf("folk metal")),
         Lens("Doom Metal", MetalVector(.62f,.22f,.91f,.35f,.40f,.48f,.58f,.34f), listOf("doom metal", "doom")),
         Lens("Thrash Metal", MetalVector(.48f,.86f,.88f,.15f,.68f,.46f,.55f,.45f), listOf("thrash metal", "thrash")),
@@ -41,7 +52,7 @@ object GenreLensCatalog {
 
 
     /**
-     * V0.5.2 strict Genre Lens membership.
+     * V0.5.3 strict Genre Lens membership.
      * Multiple selected genres are OR conditions: an artist matching any selected lens is eligible.
      * A direct Last.fm Genre seed is also trusted as membership for that genre.
      */
@@ -51,9 +62,15 @@ object GenreLensCatalog {
         if (selected.isEmpty()) return false
         val genreText = artist.genres.joinToString(" | ").lowercase()
         val seed = artist.sourceSeed.orEmpty().lowercase()
+        val locationText = listOf(artist.country, artist.area.orEmpty()).joinToString(" | ").lowercase()
         return selected.any { lens ->
-            lens.aliases.any { alias -> genreText.contains(alias.lowercase()) } ||
-                seed == "genre:${lens.name}".lowercase()
+            val aliasMatch = lens.aliases.any { alias -> genreText.contains(alias.lowercase()) }
+            val seedMatch = seed == "genre:${lens.name}".lowercase()
+            val japaneseRegionMatch = lens.name == "Japanese Metal" && (
+                locationText.contains("japan") ||
+                    locationText.split(" | ").any { it.trim() == "jp" }
+                )
+            aliasMatch || seedMatch || japaneseRegionMatch
         }
     }
 
@@ -69,9 +86,16 @@ object GenreLensCatalog {
         if (selected.isEmpty()) return 0f
         val tagText = artist.genres.joinToString(" ").lowercase()
         return selected.maxOf { lens ->
-            val vectorScore = artist.vector.similarity(lens.vector)
-            val tagBonus = if (lens.aliases.any { tagText.contains(it) }) .12f else 0f
-            (vectorScore * .88f + tagBonus).coerceIn(0f, 1f)
+            // Japanese Metal is a regional lens, not a sonic profile. Once region membership is
+            // confirmed, let Personal METAL DNA decide the musical ranking rather than biasing it
+            // toward an arbitrary "Japanese" sound vector.
+            if (lens.name == "Japanese Metal" && matches(artist, listOf(lens.name))) {
+                1f
+            } else {
+                val vectorScore = artist.vector.similarity(lens.vector)
+                val tagBonus = if (lens.aliases.any { tagText.contains(it) }) .12f else 0f
+                (vectorScore * .88f + tagBonus).coerceIn(0f, 1f)
+            }
         }
     }
 

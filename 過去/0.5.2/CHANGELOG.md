@@ -1,16 +1,5 @@
 # Changelog
 
-## 0.5.3
-
-- Genre Lensへ `Glam Metal` を追加（hair metal / sleaze metal / glam rock系タグも補助判定）
-- Genre Lensへ `Japanese Metal` を追加
-- Japanese MetalはLast.fmタグだけでなくMusicBrainz/既存データのJapan地域情報でも判定
-- Japanese Metalは地域Lensとして扱い、音楽的な並び順はPersonal METAL DNAを優先
-- `Progressive Metal` の別名判定を強化（prog / progressive death / progressive power / technical progressive）
-- Genre Lensへ `Nu Metal` を追加（nü metal / rap metalを補助判定）
-- V0.5.2のStrict Genre Lens、各ジャンル10組自動補充、無制限Local DB、5段階評価を継続
-- applicationId / SharedPreferences / legacy keysを維持
-
 ## 0.5.2
 
 - Genre Lensを加点方式から必須候補条件へ変更

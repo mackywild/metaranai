@@ -95,12 +95,3 @@ TODAY'S おすすメタル
 ```
 
 Genre selection is no longer merely a ranking bonus. An off-genre artist is never displayed while a Genre Lens is active.
-
-
-## V0.5.3 Genre Lens expansion
-
-- Glam Metal: glam/hair/sleaze aliases.
-- Japanese Metal: exact tags plus Japan country/area membership; treated primarily as a regional lens.
-- Progressive Metal: expanded progressive subgenre aliases.
-- Nu Metal: nu/nü/rap-metal aliases.
-- Strict Genre Lens filtering and automatic local-pool enrichment from V0.5.2 remain unchanged.

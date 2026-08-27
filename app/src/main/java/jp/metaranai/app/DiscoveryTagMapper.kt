@@ -4,7 +4,9 @@ object DiscoveryTagMapper {
     private val metalWords = setOf(
         "metal", "heavy metal", "power metal", "symphonic metal", "progressive metal", "melodic metal",
         "speed metal", "neoclassical metal", "folk metal", "gothic metal", "melodic death metal",
-        "death metal", "thrash metal", "doom metal", "black metal", "metalcore", "j-metal", "japanese metal"
+        "death metal", "thrash metal", "doom metal", "black metal", "metalcore", "j-metal", "japanese metal",
+        "japanese heavy metal", "glam metal", "hair metal", "sleaze metal", "glam rock", "sleaze rock",
+        "nu metal", "nü metal", "rap metal"
     )
 
     fun isMetalTag(tag: String): Boolean {
@@ -26,7 +28,9 @@ object DiscoveryTagMapper {
                 "power metal" in t -> blend(MetalVector(.91f,.88f,.56f,.62f,.55f,.08f,.94f,.89f), w)
                 "symphonic" in t -> blend(MetalVector(.88f,.64f,.58f,.96f,.58f,.16f,.89f,.82f), w)
                 "melodic death" in t -> blend(MetalVector(.82f,.76f,.82f,.46f,.65f,.80f,.40f,.66f), w)
-                "progressive" in t -> blend(MetalVector(.72f,.58f,.72f,.43f,.94f,.34f,.75f,.53f), w)
+                "progressive" in t || "prog metal" in t -> blend(MetalVector(.72f,.58f,.72f,.43f,.94f,.34f,.75f,.53f), w)
+                "glam metal" in t || "hair metal" in t || "sleaze" in t || "glam rock" in t -> blend(MetalVector(.84f,.66f,.58f,.24f,.43f,.08f,.94f,.94f), w)
+                "nu metal" in t || "nü metal" in t || "rap metal" in t -> blend(MetalVector(.50f,.45f,.90f,.12f,.42f,.55f,.56f,.78f), w)
                 "neoclassical" in t -> blend(MetalVector(.93f,.82f,.58f,.70f,.90f,.08f,.91f,.84f), w)
                 "speed metal" in t -> blend(MetalVector(.76f,.96f,.70f,.30f,.61f,.22f,.78f,.69f), w)
                 "folk metal" in t -> blend(MetalVector(.82f,.68f,.67f,.55f,.48f,.35f,.73f,.77f), w)

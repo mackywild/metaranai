@@ -1,30 +1,22 @@
-# メタらない？ v0.5.2
+# メタらない？ v0.5.3
 
-「まだ知らない、自分に刺さるMetal」を掘るAndroidアプリ。
+自分のMETAL DNAを学習し、地下まで掘って「今日の1組」を推薦するAndroidアプリ。
 
-## V0.5.2の柱
+## V0.5.3
 
-1. **Strict Genre Lens**  
-   Genre Lensは加点条件ではなく必須条件。Black Metalを選んだら、Black Metal候補からのみ「今日」を選ぶ。複数ジャンル指定時はOR条件。
+Genre Lensを18種類へ拡張。V0.5.2のStrict Genre Lensを維持しつつ、以下を追加・強化しました。
 
-2. **Genre-first auto digging**  
-   指定ジャンルがLocal Metal DBに各10組未満なら、Last.fm `tag.getTopArtists` から先に候補を補充してから再推薦する。探索中は別ジャンルのArtistを表示しない。
+- Glam Metal
+- Japanese Metal
+- Progressive Metal（別名判定強化）
+- Nu Metal
 
-3. **Personal ranking inside the genre**  
-   ジャンルで候補母集団を固定した後、METAL DNA / HIDDEN / novelty / exploration / discovery /検索興味で順位付けする。
+Japanese MetalはタグだけでなくJapanの国・地域情報も利用します。指定LensのLocal DB候補が不足するとLast.fmから先に補充し、そのジャンル内でPersonal METAL DNA / HIDDEN / 未知度などにより推薦します。
 
-4. **Unlimited Local Metal DB + Global Search + 5段階評価**  
-   V0.5.1の無制限キャッシュ、Last.fm外部検索、Spotify Artist直行、5段階評価を継続。
+## Compatibility
 
-5. **V0.4/V0.5/V0.5.1データ互換**  
-   `applicationId = jp.metaranai.app`、SharedPreferences `metaranai`、既存キーを維持。
-
-## Build
-
-- Android API 36
-- Java 17
-- Gradle 9.5.0
-- versionCode 7
-- versionName 0.5.2
-
-GitHub Actions: `.github/workflows/android.yml`
+- applicationId: `jp.metaranai.app`
+- SharedPreferences: `metaranai`
+- versionCode: 8
+- versionName: 0.5.3
+- V0.4/V0.5/V0.5.1/V0.5.2の既存データを維持

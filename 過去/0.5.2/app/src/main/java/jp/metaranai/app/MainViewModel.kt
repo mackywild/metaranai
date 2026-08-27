@@ -305,7 +305,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * V0.5.3: Genre Lens is a hard candidate condition.
+     * V0.5.2: Genre Lens is a hard candidate condition.
      * If the local genre pool is insufficient, do not show an off-genre recommendation;
      * first expand the requested genre pool, then recalculate TODAY.
      */

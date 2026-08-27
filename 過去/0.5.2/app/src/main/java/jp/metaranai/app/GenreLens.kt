@@ -39,6 +39,30 @@ object GenreLensCatalog {
         return MetalVector(avg { it.melody }, avg { it.speed }, avg { it.heavy }, avg { it.symphonic }, avg { it.technical }, avg { it.growl }, avg { it.cleanVocal }, avg { it.catchy })
     }
 
+
+    /**
+     * V0.5.2 strict Genre Lens membership.
+     * Multiple selected genres are OR conditions: an artist matching any selected lens is eligible.
+     * A direct Last.fm Genre seed is also trusted as membership for that genre.
+     */
+    fun matches(artist: MetalArtist, names: Collection<String>): Boolean {
+        if (names.isEmpty()) return true
+        val selected = lenses.filter { it.name in names }
+        if (selected.isEmpty()) return false
+        val genreText = artist.genres.joinToString(" | ").lowercase()
+        val seed = artist.sourceSeed.orEmpty().lowercase()
+        return selected.any { lens ->
+            lens.aliases.any { alias -> genreText.contains(alias.lowercase()) } ||
+                seed == "genre:${lens.name}".lowercase()
+        }
+    }
+
+    fun filter(artists: Collection<MetalArtist>, names: Collection<String>): List<MetalArtist> =
+        if (names.isEmpty()) artists.toList() else artists.filter { matches(it, names) }
+
+    fun countByGenre(artists: Collection<MetalArtist>, names: Collection<String>): Map<String, Int> =
+        names.associateWith { name -> artists.count { matches(it, listOf(name)) } }
+
     fun score(artist: MetalArtist, names: Collection<String>): Float {
         if (names.isEmpty()) return 0f
         val selected = lenses.filter { it.name in names }

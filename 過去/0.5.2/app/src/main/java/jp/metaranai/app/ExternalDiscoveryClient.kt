@@ -9,7 +9,7 @@ import java.net.URL
 import kotlin.math.roundToInt
 
 /**
- * V0.5.3 external discovery:
+ * V0.5.2 external discovery:
  * - Last.fm similar/tag discovery
  * - Last.fm live artist.search
  * - Last.fm listeners/playcount
@@ -57,7 +57,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     }
 
     /**
-     * V0.5.3 Genre Lens pool builder.
+     * V0.5.2 Genre Lens pool builder.
      * The selected genre is a hard eligibility condition. When the local pool is thin,
      * fetch Last.fm tag candidates first and retain enough genre-specific artists before recommending.
      */
@@ -287,7 +287,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         val query = params.entries.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8") }=${URLEncoder.encode(v, "UTF-8")}" }
         val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 12_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.5.3")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.5.2")
         }
         val code = connection.responseCode
         val body = (if (code in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }

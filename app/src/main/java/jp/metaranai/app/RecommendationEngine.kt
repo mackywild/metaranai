@@ -18,7 +18,7 @@ class RecommendationEngine {
         val searched = searchHistory.take(30).map { it.artistName.lowercase() }.toSet()
         val lensActive = genreLens.isNotEmpty()
         val unique = candidates.distinctBy { it.name.lowercase() }
-        // V0.5.2: Genre Lens is a WHERE clause, not a score bonus.
+        // V0.5.3: Genre Lens is a WHERE clause, not a score bonus.
         val eligible = if (lensActive) GenreLensCatalog.filter(unique, genreLens) else unique
         require(eligible.isNotEmpty()) { "Genre Lens候補がありません: ${genreLens.joinToString(" / ")}" }
         val ranked = eligible.map { artist ->
