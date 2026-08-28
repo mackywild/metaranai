@@ -232,7 +232,7 @@ class LocalStore(context: Context) {
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 52)
+        out.put("version", 60)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {

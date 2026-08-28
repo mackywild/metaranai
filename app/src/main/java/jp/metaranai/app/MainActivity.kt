@@ -39,8 +39,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MetaranaiApp(vm: MainViewModel = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("今日", "探す", "発掘", "DNA", "設定")
-    val icons = listOf("⚡", "🔎", "🔥", "🧬", "⚙")
+    val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")
+    val icons = listOf("⚡", "🔎", "📚", "🧬", "⚙")
     MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
         Scaffold(
             containerColor = Bg,
@@ -61,7 +61,7 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
                 when(tab) {
                     0 -> HomeScreen(vm)
                     1 -> SearchScreen(vm)
-                    2 -> HistoryScreen(vm)
+                    2 -> ArchiveScreen(vm)
                     3 -> DnaScreen(vm)
                     else -> SettingsScreen(vm)
                 }
@@ -76,7 +76,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.5.4", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.6.0", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -91,6 +91,10 @@ private fun HomeScreen(vm: MainViewModel) {
     val lensReady by vm.genreLensReady.collectAsState()
     val lensStatus by vm.genreLensStatus.collectAsState()
     val reactionStatus by vm.reactionStatus.collectAsState()
+    val deepDiveResults by vm.deepDiveResults.collectAsState()
+    val deepDiveStatus by vm.deepDiveStatus.collectAsState()
+    val deepDiving by vm.deepDiving.collectAsState()
+    val mediaStatus by vm.mediaOpenStatus.collectAsState()
     val activeGenres = GenreLensCatalog.activeGenres(lens)
     val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
 
@@ -145,16 +149,31 @@ private fun HomeScreen(vm: MainViewModel) {
                     }
                     Spacer(Modifier.height(18.dp))
                     ScoreBreakdown(rec.breakdown)
+                    Spacer(Modifier.height(12.dp))
+                    WhyThisArtist(vm.whyThisArtist(rec))
                     if (rec.artist.source != ArtistSource.BUILTIN) {
                         Spacer(Modifier.height(12.dp))
                         ExternalMeta(rec.artist)
                     }
                     Spacer(Modifier.height(22.dp))
-                    Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.fillMaxWidth()) { Text("Spotifyアーティストページへ") }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.weight(1f)) { Text("Spotify") }
+                        OutlinedButton(onClick = { vm.openYouTube(rec.artist) }, modifier = Modifier.weight(1f)) { Text("YouTube") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.openYouTube(rec.artist, "mv") }, modifier = Modifier.weight(1f)) { Text("MV") }
+                        OutlinedButton(onClick = { vm.openYouTube(rec.artist, "live") }, modifier = Modifier.weight(1f)) { Text("LIVE") }
+                        OutlinedButton(onClick = { vm.deepDive(rec.artist) }, enabled = !deepDiving, modifier = Modifier.weight(1.35f)) { Text(if (deepDiving) "掘削中" else "⛏ 深掘り") }
+                    }
                     if (spotifyOpen.isNotBlank()) Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                    if (mediaStatus.isNotBlank()) Text(mediaStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別の沼も見る") }
                 }
+            }
+            if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
+                DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
             }
             item {
                 Text("聴いた結果を5段階で教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
@@ -179,7 +198,7 @@ private fun HomeScreen(vm: MainViewModel) {
 @Composable
 private fun ScoreBreakdown(b: RecommendationBreakdown) {
     Column(Modifier.fillMaxWidth().background(Bg, RoundedCornerShape(16.dp)).padding(14.dp)) {
-        Text("WHY THIS BAND?  SCORE ${b.total}", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("SCORE BREAKDOWN  ${b.total}", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         buildList {
             add("相性" to b.affinity)
@@ -189,6 +208,51 @@ private fun ScoreBreakdown(b: RecommendationBreakdown) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(name, color = Muted, fontSize = 12.sp)
                 Text("+$value", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WhyThisArtist(reasons: List<String>) {
+    Column(Modifier.fillMaxWidth().background(Color(0xFF101010), RoundedCornerShape(16.dp)).padding(14.dp)) {
+        Text("WHY THIS ARTIST?", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(7.dp))
+        if (reasons.isEmpty()) {
+            Text("METAL DNAと未探索度の総合スコアから選出", color = Muted, fontSize = 11.sp)
+        } else {
+            reasons.take(5).forEach { reason ->
+                Text("• $reason", color = Color.White, fontSize = 11.sp, lineHeight = 17.sp, modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<MetalArtist>, loading: Boolean) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(16.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("⛏ DEEP DIVE", color = Acid, fontWeight = FontWeight.Bold)
+                if (status.isNotBlank()) Text(status, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
+            }
+            TextButton(onClick = vm::clearDeepDive) { Text("閉じる") }
+        }
+        if (loading) {
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        results.take(8).forEach { artist ->
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.fillMaxWidth().background(Bg, RoundedCornerShape(14.dp)).padding(12.dp)) {
+                Text(artist.name, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("${artist.country} • ${artist.genres.take(3).joinToString(" / ")} • HIDDEN ${artist.hiddenScore}", color = Muted, fontSize = 10.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { vm.openSpotifyArtist(artist) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Spotify", fontSize = 10.sp) }
+                    OutlinedButton(onClick = { vm.openYouTube(artist) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("YouTube", fontSize = 10.sp) }
+                    OutlinedButton(onClick = { vm.deepDive(artist) }, enabled = !loading, modifier = Modifier.weight(.72f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("⛏", fontSize = 11.sp) }
+                }
             }
         }
     }
@@ -218,6 +282,9 @@ private fun SearchScreen(vm: MainViewModel) {
     val remoteSearching by vm.remoteSearching.collectAsState()
     val remoteStatus by vm.remoteSearchStatus.collectAsState()
     val external by vm.externalArtists.collectAsState()
+    val deepDiveResults by vm.deepDiveResults.collectAsState()
+    val deepDiveStatus by vm.deepDiveStatus.collectAsState()
+    val deepDiving by vm.deepDiving.collectAsState()
     var query by remember { mutableStateOf("") }
     val localResults = remember(query, external) { vm.search(query) }
     val merged = (localResults + remote).distinctBy { it.name.lowercase() }
@@ -253,11 +320,24 @@ private fun SearchScreen(vm: MainViewModel) {
                 )
                 if (artist.sourceSeed?.startsWith("Search:") == true) Text("🌐 外部検索からLocal DBへ保存済み", color = Muted, fontSize = 10.sp)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = {
-                    vm.recordSearch(query.ifBlank { "discover" }, artist)
-                    vm.openSpotifyArtist(artist)
-                }, modifier = Modifier.fillMaxWidth()) { Text("Spotifyアーティストページへ") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        vm.recordSearch(query.ifBlank { "discover" }, artist)
+                        vm.openSpotifyArtist(artist)
+                    }, modifier = Modifier.weight(1f)) { Text("Spotify") }
+                    OutlinedButton(onClick = {
+                        vm.recordSearch(query.ifBlank { "discover" }, artist)
+                        vm.openYouTube(artist)
+                    }, modifier = Modifier.weight(1f)) { Text("YouTube") }
+                    OutlinedButton(onClick = {
+                        vm.recordSearch(query.ifBlank { "discover" }, artist)
+                        vm.deepDive(artist)
+                    }, enabled = !deepDiving, modifier = Modifier.weight(1f)) { Text("⛏") }
+                }
             }
+        }
+        if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
+            DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
         }
         if (history.isNotEmpty()) item {
             Spacer(Modifier.height(10.dp))
@@ -268,22 +348,103 @@ private fun SearchScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun HistoryScreen(vm: MainViewModel) {
+private fun ArchiveScreen(vm: MainViewModel) {
+    val external by vm.externalArtists.collectAsState()
     val history by vm.history.collectAsState()
-    val stats = vm.stats()
+    val deepDiveResults by vm.deepDiveResults.collectAsState()
+    val deepDiveStatus by vm.deepDiveStatus.collectAsState()
+    val deepDiving by vm.deepDiving.collectAsState()
+    var query by remember { mutableStateOf("") }
+    var reactionFilter by remember { mutableStateOf("ALL") }
+    var genreFilter by remember { mutableStateOf<String?>(null) }
+    var vocalFilter by remember { mutableStateOf<VocalType?>(null) }
+
+    val archive = remember(external, history) { vm.archiveArtists() }
+    val latestReaction = remember(history) {
+        history.groupBy { it.artistName.trim().lowercase() }.mapValues { (_, rows) -> rows.first() }
+    }
+    val ratedCount = latestReaction.keys.count { key -> archive.any { it.name.trim().lowercase() == key } }
+    val favorites = latestReaction.values.count { it.reaction == Reaction.LOVE_ALL }
+    val filtered = archive.filter { artist ->
+        val record = latestReaction[artist.name.trim().lowercase()]
+        val queryOk = query.isBlank() || artist.name.contains(query, true) || artist.country.contains(query, true) || artist.genres.any { it.contains(query, true) }
+        val reactionOk = when (reactionFilter) {
+            "UNRATED" -> record == null
+            "ALL" -> true
+            else -> record?.reaction?.name == reactionFilter
+        }
+        val genreOk = genreFilter == null || GenreLensCatalog.matches(artist, listOf(genreFilter!!))
+        val vocalOk = vocalFilter == null || artist.vocalType == vocalFilter
+        queryOk && reactionOk && genreOk && vocalOk
+    }
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("V0.4/V0.5の履歴を5段階へ安全移行。") }
+        item { Header("PERSONAL METAL ARCHIVE — 聴くほど自分専用のMetal図鑑が育つ。") }
         item {
             Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("発掘", stats.total.toString(), Modifier.weight(1f)); StatCard("全部好き", stats.favorites.toString(), Modifier.weight(1f)); StatCard("好評価", "${stats.positiveRate}%", Modifier.weight(1f)); StatCard("平均", stats.averageAffinity.toString(), Modifier.weight(1f))
+                StatCard("ARCHIVE", archive.size.toString(), Modifier.weight(1f))
+                StatCard("外部DB", external.size.toString(), Modifier.weight(1f))
+                StatCard("評価済", ratedCount.toString(), Modifier.weight(1f))
+                StatCard("💘", favorites.toString(), Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = query, onValueChange = { query = it }, singleLine = true,
+                label = { Text("Archive検索: バンド / 国 / ジャンル") },
+                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
         }
-        if (history.isEmpty()) item { Text("まだ発掘記録がない。今日の1バンドを評価するとここに残る。", color = Muted, modifier = Modifier.padding(20.dp)) }
-        items(history) { r ->
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text(r.artistName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp); Text("${r.date}  •  相性 ${r.score}%", color = Muted, fontSize = 12.sp) }
-                Text(r.reaction.label, color = Acid)
+        item {
+            Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = reactionFilter == "ALL", onClick = { reactionFilter = "ALL" }, label = { Text("全部") })
+                FilterChip(selected = reactionFilter == "UNRATED", onClick = { reactionFilter = "UNRATED" }, label = { Text("未評価") })
+                Reaction.entries.forEach { reaction ->
+                    FilterChip(selected = reactionFilter == reaction.name, onClick = { reactionFilter = reaction.name }, label = { Text(reaction.label, fontSize = 10.sp) })
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = genreFilter == null, onClick = { genreFilter = null }, label = { Text("全Genre") })
+                GenreLensCatalog.names().forEach { genre ->
+                    FilterChip(selected = genreFilter == genre, onClick = { genreFilter = if (genreFilter == genre) null else genre }, label = { Text(genre, fontSize = 10.sp) })
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = vocalFilter == null, onClick = { vocalFilter = null }, label = { Text("全Vo") })
+                listOf(VocalType.MALE, VocalType.FEMALE, VocalType.MIXED, VocalType.UNKNOWN).forEach { vocal ->
+                    FilterChip(selected = vocalFilter == vocal, onClick = { vocalFilter = if (vocalFilter == vocal) null else vocal }, label = { Text(vocal.label, fontSize = 10.sp) })
+                }
+            }
+            Text("表示 ${filtered.size}組 / 未評価 ${(archive.size - ratedCount).coerceAtLeast(0)}組", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        }
+        if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
+            DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
+        }
+        if (filtered.isEmpty()) item {
+            Text("条件に一致するArtistがいない。フィルターを緩めるか『探す』から地下を追加しよう。", color = Muted, modifier = Modifier.padding(20.dp))
+        }
+        items(filtered, key = { it.name.lowercase() }) { artist ->
+            val record = latestReaction[artist.name.trim().lowercase()]
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f)) {
+                        Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 11.sp)
+                    }
+                    Text(record?.reaction?.label ?: "未評価", color = if (record == null) Muted else Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(5.dp))
+                Text("HIDDEN ${artist.hiddenScore} • 発掘度 ${(artist.discovery * 100).toInt()}% • ${artist.vocalType.label}", color = Acid, fontSize = 10.sp)
+                if (record != null) Text("最終評価 ${record.date} • 当時DNA MATCH ${record.score}%", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
+                if (vm.spotifyLinkCached(artist.name)) Text("Spotify直行リンク取得済み", color = Muted, fontSize = 9.sp, modifier = Modifier.padding(top = 3.dp))
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { vm.openSpotifyArtist(artist) }, modifier = Modifier.weight(1f)) { Text("Spotify", fontSize = 11.sp) }
+                    OutlinedButton(onClick = { vm.openYouTube(artist) }, modifier = Modifier.weight(1f)) { Text("YouTube", fontSize = 11.sp) }
+                    OutlinedButton(onClick = { vm.deepDive(artist) }, enabled = !deepDiving, modifier = Modifier.weight(1f)) { Text("⛏", fontSize = 12.sp) }
+                }
             }
         }
     }
@@ -370,7 +531,7 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Strict Genre Lens + Unrated Auto-Refill / V0.5.4") }
+        item { Header("PERSONAL METAL ARCHIVE / V0.6.0") }
         item {
             SettingsCard("GENRE LENS", "指定ジャンルを必須条件にし、そのジャンル内でDNAに合うArtistを選ぶ。候補不足時は先に地下を自動補充する。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -388,6 +549,13 @@ private fun SettingsScreen(vm: MainViewModel) {
                     }
                 }
                 Text("今日: ${vm.activeGenres().ifEmpty { listOf("通常DNA推薦") }.joinToString(" / ")}", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        item {
+            SettingsCard("PERSONAL METAL ARCHIVE", "Local Metal DBを図鑑として可視化。評価・Genre・Voで絞り込み、Spotify / YouTube / Deep Diveへ直行できる。") {
+                Text("Archive ${vm.archiveArtists().size}組 / External ${external.size}組 / Genre ${vm.archiveGenreCounts().size}系統", color = Color.White, fontSize = 11.sp)
+                Text("下部の『図鑑』タブから開く", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -411,7 +579,7 @@ private fun SettingsScreen(vm: MainViewModel) {
         }
         item {
             SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.4.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.6.0.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

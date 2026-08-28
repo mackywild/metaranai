@@ -121,3 +121,31 @@ Strict Genre candidates
 ```
 
 評価済みArtistは通常のStrict Genre Lens推薦へフォールバックしない。候補が0なら探索UIを表示する。
+
+## V0.6.0 Personal Metal Archive
+
+```text
+                    ┌────────────────────────┐
+                    │ Unlimited Local Metal  │
+                    │ DB (external_artists)  │
+                    └───────────┬────────────┘
+                                │
+            ┌───────────────────┼───────────────────┐
+            ▼                   ▼                   ▼
+     METAL ARCHIVE      TODAY'S RECOMMEND     SEARCH
+     filter / inspect       WHY THIS ARTIST       │
+            │                   │                   │
+            └──────────┬────────┴──────────┬────────┘
+                       ▼                   ▼
+                 Spotify / YouTube      DEEP DIVE
+                                         │
+                                  Last.fm similar
+                                         │
+                              Personal DNA + HIDDEN
+                                         │
+                                         └──> Local DB
+```
+
+`DEEP DIVE` は任意ArtistをSeedとしてSimilar Artistsを取得し、評価済みArtistを通常候補から外した上でPersonal METAL DNA・HIDDEN・discoveryを使って表示順を決める。新たに取得したArtistは既存の `external_artists` キーへマージされるため、V0.5系のデータ互換を壊さない。
+
+YouTube導線は外部検索URLを使うため追加API Keyを要求しない。Spotifyは従来通り完全一致Artist URLをキャッシュし、見つからない場合はSpotify検索へフォールバックする。

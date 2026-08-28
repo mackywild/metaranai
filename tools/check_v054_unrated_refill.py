@@ -23,8 +23,8 @@ assert 'for (page in 1..3)' in ext
 assert '"page" to page.coerceAtLeast(1).toString()' in ext
 assert 'reactionStatus by vm.reactionStatus.collectAsState()' in ui
 assert 'if (reactionStatus.isNotBlank())' in ui
-assert 'versionCode = 9' in build
-assert 'versionName = "0.5.4"' in build
+assert 'versionCode = 10' in build
+assert 'versionName = "0.6.0"' in build
 
 # Behavioral model: total pool can be healthy while unrated pool requires refill.
 total_black = {f'band{i}' for i in range(30)}

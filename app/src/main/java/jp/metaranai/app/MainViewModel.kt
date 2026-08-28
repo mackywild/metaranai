@@ -16,7 +16,7 @@ import java.time.LocalDateTime
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = LocalStore(app)
-    // V0.5.4: refill is judged by UNRATED artists, not total cached artists.
+    // V0.6.0: keep V0.5.4 unrated refill; add Personal Metal Archive / Deep Dive / media routes.
     private val minimumUnratedLensPoolPerGenre = 10
     private val refillTargetUnratedLensPoolPerGenre = 20
     private val engine = RecommendationEngine()
@@ -64,6 +64,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _reactionStatus = MutableStateFlow("")
     val reactionStatus: StateFlow<String> = _reactionStatus
+
+    private val _deepDiveResults = MutableStateFlow<List<MetalArtist>>(emptyList())
+    val deepDiveResults: StateFlow<List<MetalArtist>> = _deepDiveResults
+    private val _deepDiveStatus = MutableStateFlow("")
+    val deepDiveStatus: StateFlow<String> = _deepDiveStatus
+    private val _deepDiving = MutableStateFlow(false)
+    val deepDiving: StateFlow<Boolean> = _deepDiving
+    private val _mediaOpenStatus = MutableStateFlow("")
+    val mediaOpenStatus: StateFlow<String> = _mediaOpenStatus
 
     private val _genreLensPreparing = MutableStateFlow(false)
     val genreLensPreparing: StateFlow<Boolean> = _genreLensPreparing
@@ -172,6 +181,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun openYouTube(artist: MetalArtist, mode: String = "artist") {
+        val suffix = when (mode) {
+            "mv" -> " official music video"
+            "live" -> " live"
+            else -> " official"
+        }
+        val query = Uri.encode(artist.name + suffix)
+        val url = "https://www.youtube.com/results?search_query=$query"
+        _mediaOpenStatus.value = when (mode) {
+            "mv" -> "${artist.name} のMVをYouTubeで探索"
+            "live" -> "${artist.name} のLiveをYouTubeで探索"
+            else -> "${artist.name} をYouTubeで探索"
+        }
+        openExternalUrl(url)
+    }
+
+    fun openLastFm(artist: MetalArtist) {
+        _mediaOpenStatus.value = "${artist.name} のLast.fmへ移動"
+        openExternalUrl("https://www.last.fm/music/${Uri.encode(artist.name)}")
+    }
+
+    private fun openExternalUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        getApplication<Application>().startActivity(intent)
+    }
+
+    /** V0.6.0: seed one artist and dig its Last.fm similarity neighborhood. */
+    fun deepDive(artist: MetalArtist) {
+        if (_deepDiving.value) return
+        if (store.lastFmApiKey().isBlank()) {
+            _deepDiveStatus.value = "Deep DiveにはLast.fm API Keyが必要です"
+            return
+        }
+        _deepDiving.value = true
+        _deepDiveResults.value = emptyList()
+        _deepDiveStatus.value = "${artist.name} から地下を掘削中…"
+        val rated = ratedArtistNames()
+        viewModelScope.launch {
+            externalDiscovery.discover(listOf(artist.name), limitPerSeed = 18).onSuccess { result ->
+                _externalArtists.value = result.artists
+                val direct = result.artists.filter { candidate ->
+                    !candidate.name.equals(artist.name, true) &&
+                        candidate.name.trim().lowercase() !in rated &&
+                        candidate.sourceSeed?.equals(artist.name, true) == true
+                }
+                val candidates = direct.ifEmpty {
+                    result.artists.filter { candidate ->
+                        !candidate.name.equals(artist.name, true) && candidate.name.trim().lowercase() !in rated
+                    }
+                }.sortedByDescending { candidate ->
+                    _profile.value.similarity(candidate.vector) * .68f +
+                        candidate.hiddenScore.coerceIn(0, 100) / 100f * .22f +
+                        candidate.discovery * .10f
+                }.take(12)
+                _deepDiveResults.value = candidates
+                _deepDiveStatus.value = if (candidates.isEmpty()) {
+                    "${artist.name} から新しいMetal候補を取得できませんでした"
+                } else {
+                    "${artist.name} から ${candidates.size}組を発掘 / Local DB ${result.cached}組"
+                }
+                _recommendation.value = recommendNow()
+            }.onFailure {
+                _deepDiveStatus.value = "Deep Dive失敗: ${it.message}"
+            }
+            _deepDiving.value = false
+        }
+    }
+
+    fun clearDeepDive() {
+        _deepDiveResults.value = emptyList()
+        _deepDiveStatus.value = ""
+    }
+
     fun clientId() = store.clientId()
     fun saveClientId(value: String) = store.saveClientId(value)
     fun lastFmApiKey() = store.lastFmApiKey()
@@ -179,6 +261,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun externalCount() = _externalArtists.value.size
     fun dnaType() = engine.dnaType(_profile.value, _vocalProfile.value, _history.value)
     fun activeGenres(): List<String> = GenreLensCatalog.activeGenres(_genreLens.value)
+
+    /** V0.6.0 Personal Metal Archive. Built-ins and discovered artists share one deduplicated view. */
+    fun archiveArtists(): List<MetalArtist> = allArtists().sortedWith(
+        compareByDescending<MetalArtist> { reactionFor(it.name)?.reaction?.affinityScore ?: -1 }
+            .thenByDescending { it.hiddenScore }
+            .thenByDescending { it.discovery }
+            .thenBy { it.name.lowercase() }
+    )
+
+    fun reactionFor(artistName: String): DiscoveryRecord? =
+        _history.value.firstOrNull { it.artistName.equals(artistName, true) }
+
+    fun spotifyLinkCached(artistName: String): Boolean = store.spotifyArtistLink(artistName) != null
+
+    fun archiveGenreCounts(): List<Pair<String, Int>> = GenreLensCatalog.names()
+        .map { it to GenreLensCatalog.filter(allArtists(), listOf(it)).size }
+        .filter { it.second > 0 }
+        .sortedByDescending { it.second }
+
+    fun whyThisArtist(rec: Recommendation = _recommendation.value): List<String> = buildList {
+        if (rec.activeGenres.isNotEmpty()) {
+            add("Genre Lens ${rec.activeGenres.joinToString(" / ")} の必須条件を通過")
+        }
+        if (rec.matchedTraits.isNotEmpty()) {
+            add("あなたの強いDNAと一致: ${rec.matchedTraits.joinToString(" / ")}")
+        }
+        val archiveByName = allArtists().associateBy { it.name.trim().lowercase() }
+        val reference = _history.value.asSequence()
+            .filter { it.reaction == Reaction.LOVE_ALL || it.reaction == Reaction.HIT }
+            .mapNotNull { record -> archiveByName[record.artistName.trim().lowercase()]?.let { record to it } }
+            .filterNot { (_, a) -> a.name.equals(rec.artist.name, true) }
+            .map { (record, a) -> Triple(record, a, rec.artist.vector.similarity(a.vector)) }
+            .maxByOrNull { it.third }
+        if (reference != null && reference.third >= .60f) {
+            add("${reference.first.reaction.label} の ${reference.second.name} とDNA類似 ${(reference.third * 100).toInt()}%")
+        }
+        val dominantVocal = _vocalProfile.value.dominantType()
+        if (dominantVocal != null && rec.artist.vocalType == dominantVocal) {
+            add("VOCAL DNAの主傾向 ${dominantVocal.label} と一致")
+        }
+        if (rec.artist.hiddenScore >= 70) {
+            add("HIDDEN ${rec.artist.hiddenScore}: メジャー候補より地下発掘価値を優先")
+        }
+        if (rec.artist.sourceSeed != null) {
+            add("発掘ルート: ${rec.artist.sourceSeed}")
+        }
+    }
 
     fun setGenreLensMode(mode: GenreLensMode) {
         _genreLens.value = _genreLens.value.copy(mode = mode)

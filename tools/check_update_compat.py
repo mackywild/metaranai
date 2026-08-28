@@ -4,8 +4,8 @@ app=(root/'app/build.gradle.kts').read_text()
 store=(root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
 models=(root/'app/src/main/java/jp/metaranai/app/Models.kt').read_text()
 assert 'applicationId = "jp.metaranai.app"' in app
-assert 'versionCode = 9' in app
-assert 'versionName = "0.5.4"' in app
+assert 'versionCode = 10' in app
+assert 'versionName = "0.6.0"' in app
 assert 'getSharedPreferences("metaranai"' in store
 for key in ['profile','history','search_history','external_artists','spotify_client_id','spotify_access_token','spotify_refresh_token','spotify_token_expiry','lastfm_api_key']:
     assert f'"{key}"' in store, key

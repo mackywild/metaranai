@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+- 新アプリアイコンを追加（Android launcher icon各densityへ配置）
+- 下部ナビの「発掘」を `図鑑` へ刷新し、Personal Metal Archiveを実装
+- Archive総数 / External DB / 評価済み / 全部好き件数を表示
+- Archiveをバンド名・国・ジャンル、5段階評価/未評価、Genre Lens、Vocal Typeで絞り込み
+- Archive各ArtistからSpotify / YouTube / Deep Diveへ直行
+- `WHY THIS ARTIST?` を追加し、Genre Lens・DNA一致・高評価Artist類似・Vocal DNA・HIDDEN・発掘ルートを説明
+- `DEEP DIVE` を追加。任意ArtistをSeedにLast.fm Similar Artistsを掘り、未評価 + Personal DNA + HIDDENで並び替え
+- YouTube Artist / MV / Live検索導線を追加（YouTube API Key不要の外部検索導線）
+- Deep Dive取得Artistは従来の無制限Local Metal DBへマージ
+- V0.5.4のStrict Genre Lens / 未評価自動補充 / 5段階評価 / 世界検索を継続
+- applicationId / SharedPreferences / legacy keysを維持
+
 ## 0.5.4
 
 - Genre Lensの補充判定を「総候補数」から「未評価候補数」へ変更

@@ -1,24 +1,37 @@
-# メタらない？ v0.5.4
+# メタらない？ v0.6.0
 
-自分のMETAL DNAを学習し、地下まで掘って「今日の1組」を推薦するAndroidアプリ。
+自分のMETAL DNAを学習し、地下まで掘って「今日の1組」を推薦しながら、聴くほどPersonal Metal Archiveを育てるAndroidアプリ。
 
-## V0.5.4
+## V0.6.0 — PERSONAL METAL ARCHIVE
 
-Genre Lensの「候補を食い尽くすと評価済みArtistが再登場する」問題を修正しました。
+V0.5系で育ててきたLocal Metal DBを、推薦の裏側だけでなくユーザー自身が探索できる資産へ昇格。
 
-- Genre Lensは指定ジャンルの必須条件を維持
-- 補充判定は総候補数ではなく **未評価候補数**
-- 未評価が各ジャンル10組未満で自動補充
-- 補充は未評価20組を目標に行い、評価済みArtistは目標件数へ含めない
-- 過去評価済みArtistは通常推薦から除外
-- 評価ボタンは成功/当日評価済みのどちらでも画面フィードバックを返す
-- Genre Lens画面に `未評価○組・総数○組` を表示
-- V0.5.3のGlam / Japanese / Progressive / Nu Metalを含む18 Lensを継続
+- **METAL ARCHIVE**
+  - Built-in + External Artistを重複排除して図鑑表示
+  - Archive総数 / External DB / 評価済み / 💘全部好き を表示
+  - バンド名 / 国 / ジャンル検索
+  - 未評価 / 5段階評価 / Genre Lens / Vocal Typeで絞り込み
+  - 過去評価・当時のDNA MATCH・HIDDEN・発掘度を表示
+- **WHY THIS ARTIST?**
+  - 推薦スコア内訳に加えて、Genre Lens・一致DNA・高評価Artistとの近さ・Vocal DNA・HIDDEN・発掘ルートを説明
+- **DEEP DIVE**
+  - 任意ArtistをSeedとしてLast.fm Similar Artistsを地下探索
+  - 未評価Artistを優先し、Personal METAL DNA + HIDDEN + 発掘度で再順位付け
+  - 取得候補は既存の無制限Local Metal DBへ保持
+- **LISTEN ROUTES**
+  - Spotify Artist直行
+  - YouTube Artist検索
+  - YouTube MV検索
+  - YouTube Live検索
+- **APP ICON**
+  - Metalピック / ホーン / サウンドウェーブをモチーフにした専用アイコンを追加
+- V0.5.4のStrict Genre Lens / 未評価10組未満での自動補充 / 5段階評価を継続
 
 ## Compatibility
 
 - applicationId: `jp.metaranai.app`
 - SharedPreferences: `metaranai`
-- versionCode: 9
-- versionName: 0.5.4
-- V0.4/V0.5/V0.5.1/V0.5.2/V0.5.3の既存データを維持
+- versionCode: 10
+- versionName: 0.6.0
+- V0.4〜V0.5.4の既存データを維持
+- 固定署名を設定済みなら同じ署名鍵で上書き更新可能
