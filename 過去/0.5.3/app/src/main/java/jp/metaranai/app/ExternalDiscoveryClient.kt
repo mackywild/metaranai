@@ -9,7 +9,7 @@ import java.net.URL
 import kotlin.math.roundToInt
 
 /**
- * V0.5.4 external discovery:
+ * V0.5.3 external discovery:
  * - Last.fm similar/tag discovery
  * - Last.fm live artist.search
  * - Last.fm listeners/playcount
@@ -57,57 +57,40 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     }
 
     /**
-     * V0.5.4 Genre Lens pool builder.
-     * The selected genre remains a hard eligibility condition, but the target pool is counted
-     * after excluding artists the user has already rated. This keeps discovery moving forward.
+     * V0.5.3 Genre Lens pool builder.
+     * The selected genre is a hard eligibility condition. When the local pool is thin,
+     * fetch Last.fm tag candidates first and retain enough genre-specific artists before recommending.
      */
     suspend fun ensureGenrePool(
         genreLenses: List<String>,
-        minimumPerGenre: Int = 20,
-        fetchPerGenre: Int = 50,
-        excludedArtistNames: Set<String> = emptySet()
+        minimumPerGenre: Int = 10,
+        fetchPerGenre: Int = 36
     ): Result<GenrePoolResult> = withContext(Dispatchers.IO) {
         runCatching {
             val genres = genreLenses.distinct().filter { it in GenreLensCatalog.names() }.take(4)
             require(genres.isNotEmpty()) { "Genre Lensがありません" }
             val key = store.lastFmApiKey()
             require(key.isNotBlank()) { "Last.fm API Keyを設定してください" }
-            val excluded = excludedArtistNames.map { it.trim().lowercase() }.toSet()
 
             var archive = (MetalCatalog.artists + store.loadExternalArtists()).distinctBy { it.name.lowercase() }
             val fetchedByGenre = linkedMapOf<String, Int>()
             val accepted = mutableListOf<MetalArtist>()
 
             genres.forEach { genre ->
-                val before = GenreLensCatalog.filter(
-                    archive.filterNot { it.name.trim().lowercase() in excluded },
-                    listOf(genre)
-                ).size
+                val before = GenreLensCatalog.filter(archive, listOf(genre)).size
                 if (before >= minimumPerGenre) {
                     fetchedByGenre[genre] = 0
                     return@forEach
                 }
                 val need = minimumPerGenre - before
-                val knownNames = archive.map { it.name.trim().lowercase() }.toMutableSet()
-                // Do not get stuck on the same top-50 list after the user has rated it all.
-                // Walk deeper Last.fm tag pages until we have enough genuinely new names (max 3 pages/run).
-                val raw = mutableListOf<Candidate>()
-                for (page in 1..3) {
-                    raw += getTopArtistsByTag(key, genre, fetchPerGenre.coerceIn(12, 50), page)
-                    val freshNames = raw.map { it.name.trim().lowercase() }
-                        .distinct()
-                        .count { it !in knownNames && it !in excluded }
-                    if (freshNames >= need) break
-                }
+                val raw = getTopArtistsByTag(key, genre, fetchPerGenre.coerceIn(12, 50))
                 fetchedByGenre[genre] = raw.size
+                val knownNames = archive.map { it.name.lowercase() }.toMutableSet()
                 var addedForGenre = 0
                 var mbLookups = 0
                 for (candidate in raw) {
                     if (addedForGenre >= need) break
-                    val normalized = candidate.name.trim().lowercase()
-                    // Existing cached artists (rated or unrated) are never duplicated.
-                    // Rated names are explicitly excluded from satisfying the refill target.
-                    if (normalized in knownNames || normalized in excluded) continue
+                    if (candidate.name.lowercase() in knownNames) continue
                     val artist = enrichCandidate(
                         key,
                         candidate,
@@ -117,7 +100,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                     ) ?: continue
                     if (mbLookups < 4) mbLookups++
                     accepted += artist
-                    knownNames += artist.name.trim().lowercase()
+                    knownNames += artist.name.lowercase()
                     addedForGenre++
                     archive = (archive + artist).distinctBy { it.name.lowercase() }
                 }
@@ -125,13 +108,12 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 
             val combined = mergeCache(accepted)
             val fullArchive = (MetalCatalog.artists + combined).distinctBy { it.name.lowercase() }
-            val unratedArchive = fullArchive.filterNot { it.name.trim().lowercase() in excluded }
             GenrePoolResult(
                 genres = genres,
                 fetched = fetchedByGenre.values.sum(),
                 accepted = accepted.size,
                 cached = combined.size,
-                counts = GenreLensCatalog.countByGenre(unratedArchive, genres),
+                counts = GenreLensCatalog.countByGenre(fullArchive, genres),
                 artists = combined
             )
         }
@@ -265,19 +247,15 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         }
     }
 
-    private fun getTopArtistsByTag(apiKey: String, tag: String, limit: Int, page: Int = 1): List<Candidate> {
-        val json = lastFmGet(mapOf(
-            "method" to "tag.getTopArtists", "tag" to tag, "limit" to limit.toString(),
-            "page" to page.coerceAtLeast(1).toString(), "api_key" to apiKey, "format" to "json"
-        ))
+    private fun getTopArtistsByTag(apiKey: String, tag: String, limit: Int): List<Candidate> {
+        val json = lastFmGet(mapOf("method" to "tag.getTopArtists", "tag" to tag, "limit" to limit.toString(), "api_key" to apiKey, "format" to "json"))
         val arr = json.optJSONObject("topartists")?.optJSONArray("artist") ?: return emptyList()
         return buildList {
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val name = o.optString("name").trim()
                 if (name.isBlank()) continue
-                val globalRank = (page.coerceAtLeast(1) - 1) * limit + i
-                val rankScore = (0.94f - globalRank * 0.008f).coerceAtLeast(.42f)
+                val rankScore = (0.94f - i * 0.02f).coerceAtLeast(.54f)
                 add(Candidate(name, rankScore, "Genre:$tag"))
             }
         }
@@ -309,7 +287,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         val query = params.entries.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8") }=${URLEncoder.encode(v, "UTF-8")}" }
         val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 12_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.5.4")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.5.3")
         }
         val code = connection.responseCode
         val body = (if (code in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }

@@ -14,7 +14,7 @@ class MusicBrainzClient {
         val url = URL("https://musicbrainz.org/ws/2/artist/?query=$q&fmt=json&limit=3")
         val c = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 10_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.5.4 (music discovery prototype)")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.5.3 (music discovery prototype)")
             setRequestProperty("Accept", "application/json")
         }
         val code = c.responseCode

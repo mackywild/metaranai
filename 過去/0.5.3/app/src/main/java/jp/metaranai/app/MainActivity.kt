@@ -76,7 +76,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.5.4", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.5.3", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -90,7 +90,6 @@ private fun HomeScreen(vm: MainViewModel) {
     val lensPreparing by vm.genreLensPreparing.collectAsState()
     val lensReady by vm.genreLensReady.collectAsState()
     val lensStatus by vm.genreLensStatus.collectAsState()
-    val reactionStatus by vm.reactionStatus.collectAsState()
     val activeGenres = GenreLensCatalog.activeGenres(lens)
     val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
 
@@ -110,11 +109,7 @@ private fun HomeScreen(vm: MainViewModel) {
                     Spacer(Modifier.height(16.dp))
                     Text(if (lensPreparing) "${activeGenres.joinToString(" / ")} の地下を探索中…" else "${activeGenres.joinToString(" / ")} の候補が不足しています", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(10.dp))
-                    Text("指定ジャンル以外は出さない。評価済みArtistを除外し、新しい未評価候補をLocal Metal DBへ補充してから、METAL DNAで今日の1組を選びます。", color = Muted, lineHeight = 20.sp)
-                    if (reactionStatus.isNotBlank()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(reactionStatus, color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Text("指定ジャンル以外は出さない。候補をLocal Metal DBへ補充してから、METAL DNAで今日の1組を選びます。", color = Muted, lineHeight = 20.sp)
                     if (lensPreparing) {
                         Spacer(Modifier.height(14.dp))
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -166,9 +161,6 @@ private fun HomeScreen(vm: MainViewModel) {
                                 Text(r.description, color = Muted, fontSize = 10.sp)
                             }
                         }
-                    }
-                    if (reactionStatus.isNotBlank()) {
-                        Text(reactionStatus, color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
@@ -370,7 +362,7 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Strict Genre Lens + Unrated Auto-Refill / V0.5.4") }
+        item { Header("Strict Genre Lens + Unlimited Local DB / V0.5.3") }
         item {
             SettingsCard("GENRE LENS", "指定ジャンルを必須条件にし、そのジャンル内でDNAに合うArtistを選ぶ。候補不足時は先に地下を自動補充する。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -411,7 +403,7 @@ private fun SettingsScreen(vm: MainViewModel) {
         }
         item {
             SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.4.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.5.3.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

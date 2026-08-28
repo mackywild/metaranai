@@ -1,18 +1,5 @@
 # Changelog
 
-## 0.5.4
-
-- Genre Lensの補充判定を「総候補数」から「未評価候補数」へ変更
-- 過去に評価済みのArtistをStrict Genre Lensの通常推薦から除外
-- 未評価候補が各ジャンル10組未満になるとLast.fmから自動補充
-- 補充時は評価済みArtistを候補数へ含めず、未評価20組を目標に新規発掘
-- Genre Lens表示へ「未評価○組 / 総数○組」を追加
-- 評価ボタンの無言returnを廃止し、当日評価済みの場合も画面へ理由を表示
-- 評価成功時に「○○を記録しました」のフィードバックを表示
-- 未評価候補が尽きた場合は評価済み・別ジャンルへ戻さず、地下探索状態へ移行
-- V0.5.3の18 Genre Lens、無制限Local DB、5段階評価、世界検索を継続
-- applicationId / SharedPreferences / legacy keysを維持
-
 ## 0.5.3
 
 - Genre Lensへ `Glam Metal` を追加（hair metal / sleaze metal / glam rock系タグも補助判定）

@@ -16,9 +16,7 @@ import java.time.LocalDateTime
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = LocalStore(app)
-    // V0.5.4: refill is judged by UNRATED artists, not total cached artists.
-    private val minimumUnratedLensPoolPerGenre = 10
-    private val refillTargetUnratedLensPoolPerGenre = 20
+    private val minimumLensPoolPerGenre = 10
     private val engine = RecommendationEngine()
     private val spotify = SpotifyClient(app, store)
     private val externalDiscovery = ExternalDiscoveryClient(store)
@@ -62,9 +60,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _backupStatus = MutableStateFlow("")
     val backupStatus: StateFlow<String> = _backupStatus
 
-    private val _reactionStatus = MutableStateFlow("")
-    val reactionStatus: StateFlow<String> = _reactionStatus
-
     private val _genreLensPreparing = MutableStateFlow(false)
     val genreLensPreparing: StateFlow<Boolean> = _genreLensPreparing
     private val _genreLensReady = MutableStateFlow(initialLensReady())
@@ -73,7 +68,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val genreLensStatus: StateFlow<String> = _genreLensStatus
 
     private var lensRefreshJob: Job? = null
-    private var reactionFeedbackJob: Job? = null
 
     init {
         val genres = activeGenres()
@@ -88,27 +82,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } else {
                 _genreLensPreparing.value = false
-                _genreLensReady.value = lensUnratedCandidates(genres).isNotEmpty()
-                _genreLensStatus.value += " / Last.fm API Keyを設定すると未評価候補を自動補充できます"
+                _genreLensStatus.value += " / Last.fm API Keyを設定すると自動補充できます"
             }
         }
     }
 
     fun react(reaction: Reaction) {
         val rec = _recommendation.value
-        val today = LocalDate.now().toString()
-        if (_history.value.any { it.artistName.equals(rec.artist.name, true) && it.date == today }) {
-            showReactionStatus("${rec.artist.name} は今日すでに評価済み。未評価候補を探します")
-            refreshAfterReaction()
-            return
-        }
-        val record = DiscoveryRecord(rec.artist.name, today, reaction, rec.compatibility)
+        if (_history.value.any { it.artistName == rec.artist.name && it.date == LocalDate.now().toString() }) return
+        val record = DiscoveryRecord(rec.artist.name, LocalDate.now().toString(), reaction, rec.compatibility)
         _history.value = listOf(record) + _history.value
         _profile.value = engine.updatedProfile(_profile.value, rec.artist, reaction)
         _vocalProfile.value = VocalAnalyzer.update(_vocalProfile.value, rec.artist.vocalType, reaction)
-        showReactionStatus("${reaction.label} を記録しました")
         persistAndRefresh()
-        refreshAfterReaction()
     }
 
     fun shuffle() {
@@ -313,14 +299,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
         _discoveryStatus.value = store.discoverySummary()
-        _genreLensReady.value = currentLensPoolSatisfied() ||
-            (store.lastFmApiKey().isBlank() && lensUnratedCandidates().isNotEmpty())
+        _genreLensReady.value = currentLensPoolSatisfied()
         _genreLensStatus.value = currentLensStatus()
         _recommendation.value = recommendNow()
     }
 
     /**
-     * V0.5.4: Genre Lens remains a hard condition, but refill readiness is based on UNRATED candidates.
+     * V0.5.3: Genre Lens is a hard candidate condition.
      * If the local genre pool is insufficient, do not show an off-genre recommendation;
      * first expand the requested genre pool, then recalculate TODAY.
      */
@@ -336,13 +321,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val counts = lensUnratedCounts(genres)
-        val ready = counts.values.all { it >= minimumUnratedLensPoolPerGenre }
-        val hasUnrated = lensUnratedCandidates(genres).isNotEmpty()
-        _genreLensReady.value = ready || (hasUnrated && store.lastFmApiKey().isBlank())
-        _genreLensPreparing.value = !ready && store.lastFmApiKey().isNotBlank()
+        val counts = lensCounts(genres)
+        val ready = counts.values.all { it >= minimumLensPoolPerGenre }
+        _genreLensReady.value = ready
+        _genreLensPreparing.value = !ready
         _genreLensStatus.value = lensStatusText(genres, counts, ready)
-        if (hasUnrated && !_genreLensPreparing.value) {
+        if (GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()) {
             _recommendation.value = recommendNow()
         }
 
@@ -352,7 +336,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ensureGenreLensPool()
             }
         } else if (!ready) {
-            _genreLensStatus.value += " / Last.fm API Keyを設定すると未評価候補を自動補充できます"
+            _genreLensStatus.value += " / Last.fm API Keyを設定すると自動補充できます"
         }
     }
 
@@ -366,49 +350,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _recommendation.value = recommendNow()
             return
         }
-        val hasUnratedBefore = lensUnratedCandidates(genres).isNotEmpty()
         if (store.lastFmApiKey().isBlank()) {
-            _genreLensReady.value = hasUnratedBefore
+            _genreLensReady.value = GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()
             _genreLensPreparing.value = false
-            _genreLensStatus.value = "${genres.joinToString(" / ")} の未評価候補不足 / Last.fm API Key未設定"
-            if (hasUnratedBefore) _recommendation.value = recommendNow()
+            _genreLensStatus.value = "${genres.joinToString(" / ")} の候補不足 / Last.fm API Key未設定"
             return
         }
 
         _discovering.value = true
         _genreLensPreparing.value = true
-        _genreLensReady.value = false
-        _genreLensStatus.value = "${genres.joinToString(" / ")} の未評価地下候補を補充中…"
+        _genreLensStatus.value = "${genres.joinToString(" / ")} の地下を優先探索中…"
         _discoveryStatus.value = _genreLensStatus.value
         viewModelScope.launch {
-            externalDiscovery.ensureGenrePool(
-                genreLenses = genres,
-                minimumPerGenre = refillTargetUnratedLensPoolPerGenre,
-                fetchPerGenre = 50,
-                excludedArtistNames = ratedArtistNames()
-            ).onSuccess { result ->
+            externalDiscovery.ensureGenrePool(genres, minimumLensPoolPerGenre).onSuccess { result ->
                 _externalArtists.value = result.artists
-                val counts = lensUnratedCounts(genres)
-                val totals = lensCounts(genres)
-                val hasUnrated = lensUnratedCandidates(genres).isNotEmpty()
-                _genreLensReady.value = hasUnrated
+                val counts = lensCounts(genres)
+                val hasAny = GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()
+                _genreLensReady.value = hasAny
                 _genreLensPreparing.value = false
-                _genreLensStatus.value = if (hasUnrated) {
-                    "未評価候補 ${counts.entries.joinToString(" / ") { "${it.key} ${it.value}組" }} / 総候補 ${totals.entries.joinToString(" / ") { "${it.key} ${it.value}組" }} / Local DB ${result.cached}組"
+                _genreLensStatus.value = if (hasAny) {
+                    "Genre Lens候補 ${counts.entries.joinToString(" / ") { "${it.key} ${it.value}組" }} / Local DB ${result.cached}組"
                 } else {
-                    "${genres.joinToString(" / ")} の新しい未評価候補を取得できませんでした"
+                    "${genres.joinToString(" / ")} の候補を取得できませんでした"
                 }
-                val summary = "Genre Lens未評価補充: 候補${result.fetched}件 → 新規${result.accepted}件 / ${_genreLensStatus.value}"
+                val summary = "Genre Lens: 候補${result.fetched}件 → 追加${result.accepted}件 / ${_genreLensStatus.value}"
                 _discoveryStatus.value = summary
                 store.saveDiscoverySummary(summary)
-                if (hasUnrated) _recommendation.value = recommendNow(System.currentTimeMillis())
+                if (hasAny) _recommendation.value = recommendNow()
             }.onFailure {
-                val hasUnrated = lensUnratedCandidates(genres).isNotEmpty()
                 _genreLensPreparing.value = false
-                _genreLensReady.value = hasUnrated
-                _genreLensStatus.value = "Genre Lens未評価候補の探索失敗: ${it.message}"
+                _genreLensReady.value = GenreLensCatalog.filter(allArtists(), genres).isNotEmpty()
+                _genreLensStatus.value = "Genre Lens探索失敗: ${it.message}"
                 _discoveryStatus.value = _genreLensStatus.value
-                if (hasUnrated) _recommendation.value = recommendNow()
             }
             _discovering.value = false
         }
@@ -419,40 +392,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return LocalDate.now().toEpochDay() * 31L + lensHash
     }
 
-    private fun ratedArtistNames(): Set<String> =
-        _history.value.map { it.artistName.trim().lowercase() }.toSet()
-
     private fun lensCandidates(genres: List<String> = activeGenres()): List<MetalArtist> =
         GenreLensCatalog.filter(allArtists(), genres)
-
-    private fun lensUnratedCandidates(genres: List<String> = activeGenres()): List<MetalArtist> {
-        val rated = ratedArtistNames()
-        return lensCandidates(genres).filterNot { it.name.trim().lowercase() in rated }
-    }
 
     private fun lensCounts(genres: List<String> = activeGenres()): Map<String, Int> =
         GenreLensCatalog.countByGenre(allArtists(), genres)
 
-    private fun lensUnratedCounts(genres: List<String> = activeGenres()): Map<String, Int> {
-        val rated = ratedArtistNames()
-        val unratedArchive = allArtists().filterNot { it.name.trim().lowercase() in rated }
-        return GenreLensCatalog.countByGenre(unratedArchive, genres)
-    }
-
     private fun currentLensPoolSatisfied(): Boolean {
         val genres = activeGenres()
         if (genres.isEmpty()) return true
-        val counts = lensUnratedCounts(genres)
-        return counts.isNotEmpty() && counts.values.all { it >= minimumUnratedLensPoolPerGenre }
+        val counts = lensCounts(genres)
+        return counts.isNotEmpty() && counts.values.all { it >= minimumLensPoolPerGenre }
     }
 
     private fun initialLensReady(): Boolean {
         val genres = GenreLensCatalog.activeGenres(_genreLens.value)
         if (genres.isEmpty()) return true
-        val rated = _history.value.map { it.artistName.trim().lowercase() }.toSet()
-        val unratedArchive = allArtists().filterNot { it.name.trim().lowercase() in rated }
-        val counts = GenreLensCatalog.countByGenre(unratedArchive, genres)
-        return counts.isNotEmpty() && counts.values.all { it >= minimumUnratedLensPoolPerGenre }
+        val counts = GenreLensCatalog.countByGenre(allArtists(), genres)
+        return counts.isNotEmpty() && counts.values.all { it >= minimumLensPoolPerGenre }
     }
 
     private fun initialLensStatus(): String = currentLensStatus()
@@ -460,18 +417,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun currentLensStatus(): String {
         val genres = activeGenres()
         if (genres.isEmpty()) return ""
-        val counts = lensUnratedCounts(genres)
+        val counts = lensCounts(genres)
         return lensStatusText(genres, counts, currentLensPoolSatisfied())
     }
 
     private fun lensStatusText(genres: List<String>, counts: Map<String, Int>, ready: Boolean): String {
-        val totals = lensCounts(genres)
-        val detail = genres.joinToString(" / ") { "$it 未評価${counts[it] ?: 0}組・総数${totals[it] ?: 0}組" }
-        return if (ready) {
-            "Genre Lens候補: $detail"
-        } else {
-            "Genre Lens未評価候補不足: $detail（${minimumUnratedLensPoolPerGenre}組未満で自動補充 → 目標${refillTargetUnratedLensPoolPerGenre}組）"
-        }
+        val detail = genres.joinToString(" / ") { "$it ${counts[it] ?: 0}組" }
+        return if (ready) "Genre Lens候補: $detail" else "Genre Lens候補不足: $detail（各${minimumLensPoolPerGenre}組まで自動補充）"
     }
 
     private fun recommendNow(seed: Long = recommendationSeed()): Recommendation {
@@ -482,9 +434,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 candidates = allArtists(), genreLens = emptyList(), seed = seed
             )
         }
-        val strict = lensUnratedCandidates(genres)
-        // Keep a safe hidden fallback object while the UI shows the refill state.
-        // Rated or off-genre artists are never presented as the active Genre Lens recommendation.
+        val strict = lensCandidates(genres)
+        // Keep a safe hidden fallback object while the UI shows the "digging" state.
+        // An off-genre artist is never presented as the active Genre Lens recommendation.
         if (strict.isEmpty()) {
             return engine.recommend(
                 profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
@@ -501,50 +453,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         store.saveHistory(_history.value)
         store.saveProfile(_profile.value)
         store.saveVocalProfile(_vocalProfile.value)
-        // Genre Lens refresh is handled after the new rating updates the unrated pool.
-        // This avoids briefly surfacing the hidden off-genre fallback when the pool hits zero.
-        if (activeGenres().isEmpty()) {
-            _recommendation.value = recommendNow(System.currentTimeMillis())
-        }
-    }
-
-    private fun refreshAfterReaction() {
-        val genres = activeGenres()
-        if (genres.isEmpty()) {
-            _recommendation.value = recommendNow(System.currentTimeMillis())
-            return
-        }
-        val hasUnrated = lensUnratedCandidates(genres).isNotEmpty()
-        val enough = currentLensPoolSatisfied()
-        if (enough) {
-            _genreLensReady.value = true
-            _genreLensPreparing.value = false
-            _genreLensStatus.value = currentLensStatus()
-            _recommendation.value = recommendNow(System.currentTimeMillis())
-            return
-        }
-        _genreLensStatus.value = currentLensStatus()
-        if (store.lastFmApiKey().isNotBlank()) {
-            _genreLensReady.value = false
-            _genreLensPreparing.value = true
-            lensRefreshJob?.cancel()
-            lensRefreshJob = viewModelScope.launch {
-                delay(120)
-                ensureGenreLensPool(force = true)
-            }
-        } else {
-            _genreLensReady.value = hasUnrated
-            _genreLensPreparing.value = false
-            if (hasUnrated) _recommendation.value = recommendNow(System.currentTimeMillis())
-        }
-    }
-
-    private fun showReactionStatus(message: String) {
-        _reactionStatus.value = message
-        reactionFeedbackJob?.cancel()
-        reactionFeedbackJob = viewModelScope.launch {
-            delay(2200)
-            if (_reactionStatus.value == message) _reactionStatus.value = ""
-        }
+        _recommendation.value = recommendNow(System.currentTimeMillis())
     }
 }

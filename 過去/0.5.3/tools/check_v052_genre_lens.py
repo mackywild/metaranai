@@ -8,8 +8,8 @@ ui=(root/'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
 assert 'fun matches(artist: MetalArtist' in genre
 assert 'val eligible = if (lensActive) GenreLensCatalog.filter' in engine
 assert 'ensureGenrePool' in ext
-assert 'minimumUnratedLensPoolPerGenre = 10' in vm
-assert 'Genre Lens未評価候補不足' in vm
+assert 'minimumLensPoolPerGenre = 10' in vm
+assert 'Genre Lens候補不足' in vm
 assert 'GENRE LENS DIGGING' in ui
 assert '指定ジャンル以外は出さない' in ui
 print('V052_STRICT_GENRE_LENS_OK')
