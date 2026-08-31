@@ -217,6 +217,11 @@ class LocalStore(context: Context) {
         prefs.edit().putString("genre_lens_v05", o.toString()).apply()
     }
 
+    /**
+     * Legacy V0.5/V0.6.0 name-only Spotify cache.
+     * Kept for backup/data compatibility, but V0.6.1 MUST NOT read from it because
+     * same-name artists can point at the wrong Spotify identity.
+     */
     fun spotifyArtistLink(name: String): String? {
         val raw = prefs.getString("spotify_artist_links_v05", "{}") ?: "{}"
         return runCatching { JSONObject(raw).optString(name.lowercase()).takeIf { it.isNotBlank() } }.getOrNull()
@@ -229,10 +234,55 @@ class LocalStore(context: Context) {
         prefs.edit().putString("spotify_artist_links_v05", o.toString()).apply()
     }
 
+    private fun spotifyIdentityKey(artist: MetalArtist): String {
+        artist.mbid?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { return "mbid:$it" }
+        fun norm(value: String?): String = value.orEmpty().trim().lowercase()
+            .replace(Regex("\\s+"), " ")
+        return listOf(
+            "name:${norm(artist.name)}",
+            "country:${norm(artist.country)}",
+            "area:${norm(artist.area)}",
+            "begin:${norm(artist.beginDate)}"
+        ).joinToString("|")
+    }
+
+    /** V0.6.1 verified cache. Old spotify_artist_links_v05 is intentionally ignored. */
+    fun spotifyArtistLinkV061(artist: MetalArtist): SpotifyArtistDestination? {
+        val raw = prefs.getString("spotify_artist_links_v061", "{}") ?: "{}"
+        return runCatching {
+            val entry = JSONObject(raw).optJSONObject(spotifyIdentityKey(artist)) ?: return@runCatching null
+            val url = entry.optString("url").takeIf { it.isNotBlank() } ?: return@runCatching null
+            SpotifyArtistDestination(
+                url = url,
+                direct = true,
+                artistId = entry.optString("artistId").takeIf { it.isNotBlank() },
+                verification = entry.optString("verification", "verified cache")
+            )
+        }.getOrNull()
+    }
+
+    fun saveSpotifyArtistLinkV061(
+        artist: MetalArtist,
+        url: String,
+        artistId: String?,
+        verification: String
+    ) {
+        val raw = prefs.getString("spotify_artist_links_v061", "{}") ?: "{}"
+        val root = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+        root.put(spotifyIdentityKey(artist), JSONObject().apply {
+            put("url", url)
+            put("artistId", artistId ?: "")
+            put("verification", verification)
+            put("artistName", artist.name)
+            put("mbid", artist.mbid ?: "")
+        })
+        prefs.edit().putString("spotify_artist_links_v061", root.toString()).apply()
+    }
+
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 60)
+        out.put("version", 61)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {

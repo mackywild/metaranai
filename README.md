@@ -1,6 +1,15 @@
-# メタらない？ v0.6.0
+# メタらない？ v0.6.1
 
 自分のMETAL DNAを学習し、地下まで掘って「今日の1組」を推薦しながら、聴くほどPersonal Metal Archiveを育てるAndroidアプリ。
+
+## V0.6.1 — SPOTIFY IDENTITY FIX
+
+- Spotify直リンクは本人確認できた場合だけ開く
+- MusicBrainz MBIDのSpotify URL relationを最優先
+- Spotify検索の部分一致は直行禁止
+- 同名ArtistはGenreで一意に絞れない限り検索画面へフォールバック
+- 旧 name-only cache `spotify_artist_links_v05` は互換保持のみで使用しない
+- 新しい本人確認済みcache `spotify_artist_links_v061` を使用
 
 ## V0.6.0 — PERSONAL METAL ARCHIVE
 
@@ -32,6 +41,6 @@ V0.5系で育ててきたLocal Metal DBを、推薦の裏側だけでなくユ�
 - applicationId: `jp.metaranai.app`
 - SharedPreferences: `metaranai`
 - versionCode: 10
-- versionName: 0.6.0
+- versionName: 0.6.1
 - V0.4〜V0.5.4の既存データを維持
 - 固定署名を設定済みなら同じ署名鍵で上書き更新可能

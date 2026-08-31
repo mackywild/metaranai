@@ -1,6 +1,6 @@
-# Data compatibility contract: V0.4〜V0.5.4 → V0.6.0
+# Data compatibility contract: V0.4〜V0.6.0 → V0.6.1
 
-V0.6.0 is an additive update. Existing analysis data remains the compatibility contract.
+V0.6.1 is an additive update. Existing analysis data remains the compatibility contract.
 
 | Item | Existing data | V0.6.0 behavior |
 |---|---|---|
@@ -24,3 +24,8 @@ Personal Metal Archive and Deep Dive reuse the existing data structures. Deep Di
 V0.6.0 never infers the two extreme ratings from legacy data. A legacy HIT is **not** promoted to `全部好き`, and a legacy MISS is **not** demoted to `興味なし`.
 
 No `SharedPreferences.clear()` or destructive migration is performed.
+
+
+## V0.6.1 Spotify cache migration
+
+`spotify_artist_links_v05` is preserved for backup compatibility but is no longer read for direct navigation. V0.6.1 stores only verified identity links in `spotify_artist_links_v061`; all profile/history/archive data remain unchanged.

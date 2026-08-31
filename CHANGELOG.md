@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1
+
+- Spotify Artist Identity Resolverを全面修正
+- 信頼度90以上のMBID -> MusicBrainz URL relation -> Spotify Artistを最優先
+- Last.fmが返したMBIDをMusicBrainzの名前検索結果より優先し、同名誤同定を抑制
+- Artist名の部分一致で直接遷移する挙動を廃止
+- 完全同名ArtistはGenre証拠で一意に絞れた場合のみ直行
+- 判定不能時は安全にSpotify検索へフォールバック
+- 旧 `spotify_artist_links_v05` の誤リンクcacheを無効化し、`spotify_artist_links_v061`へ切替
+
 ## 0.6.0
 
 - 新アプリアイコンを追加（Android launcher icon各densityへ配置）

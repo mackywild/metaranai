@@ -39,11 +39,28 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     }
 
 
-    suspend fun resolveArtistDestination(artistName: String): SpotifyArtistDestination = withContext(Dispatchers.IO) {
-        store.spotifyArtistLink(artistName)?.let { return@withContext SpotifyArtistDestination(it, true) }
-        val fallback = "https://open.spotify.com/search/${enc(artistName)}"
+    /**
+     * V0.6.1 Spotify Identity Resolver.
+     * Direct navigation is allowed only when the artist identity is verified.
+     * Name-only / partial-name guesses are never opened directly.
+     */
+    suspend fun resolveArtistDestination(artist: MetalArtist): SpotifyArtistDestination = withContext(Dispatchers.IO) {
+        store.spotifyArtistLinkV061(artist)?.let { return@withContext it }
+
+        val fallback = "https://open.spotify.com/search/${enc(artist.name)}"
+
+        // Strongest route: MusicBrainz MBID -> URL relationship -> Spotify artist.
+        artist.mbid?.takeIf { it.isNotBlank() && artist.metadataConfidence >= 90 }?.let { mbid ->
+            resolveSpotifyFromMusicBrainz(mbid)?.let { verified ->
+                store.saveSpotifyArtistLinkV061(artist, verified.url, verified.artistId, verified.verification)
+                return@withContext verified
+            }
+        }
+
         val clientId = store.clientId()
-        if (clientId.isBlank()) return@withContext SpotifyArtistDestination(fallback, false)
+        if (clientId.isBlank()) {
+            return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify Client ID未設定: 検索へ")
+        }
         val token = runCatching {
             when {
                 store.token().isNotBlank() && store.tokenExpiry() > System.currentTimeMillis() + 60_000 -> store.token()
@@ -51,38 +68,124 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
                 else -> ""
             }
         }.getOrDefault("")
-        if (token.isBlank()) return@withContext SpotifyArtistDestination(fallback, false)
-
-        val q = URLEncoder.encode("artist:\"$artistName\"", Charsets.UTF_8.name())
-        val json = runCatching { getJson("https://api.spotify.com/v1/search?q=$q&type=artist&limit=5", token) }.getOrNull()
-            ?: return@withContext SpotifyArtistDestination(fallback, false)
-        val items = json.optJSONObject("artists")?.optJSONArray("items")
-            ?: return@withContext SpotifyArtistDestination(fallback, false)
-        val target = normalizeArtistName(artistName)
-        var best: JSONObject? = null
-        var bestScore = Int.MIN_VALUE
-        for (i in 0 until items.length()) {
-            val a = items.optJSONObject(i) ?: continue
-            val name = a.optString("name")
-            val normalized = normalizeArtistName(name)
-            val score = when {
-                normalized == target -> 100
-                normalized.contains(target) || target.contains(normalized) -> 70
-                else -> 0
-            } - i
-            if (score > bestScore) { best = a; bestScore = score }
+        if (token.isBlank()) {
+            return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify未認証: 検索へ")
         }
-        val chosen = best?.takeIf { bestScore >= 65 }
-            ?: return@withContext SpotifyArtistDestination(fallback, false)
+
+        val q = URLEncoder.encode("artist:\"${artist.name}\"", Charsets.UTF_8.name())
+        val json = runCatching { getJson("https://api.spotify.com/v1/search?q=$q&type=artist&limit=10", token) }.getOrNull()
+            ?: return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify照合失敗: 検索へ")
+        val items = json.optJSONObject("artists")?.optJSONArray("items")
+            ?: return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify候補なし: 検索へ")
+
+        val target = canonicalExactName(artist.name)
+        val exactMatches = mutableListOf<JSONObject>()
+        for (i in 0 until items.length()) {
+            val candidate = items.optJSONObject(i) ?: continue
+            if (canonicalExactName(candidate.optString("name")) == target) exactMatches += candidate
+        }
+
+        // Partial matches are intentionally rejected in V0.6.1.
+        if (exactMatches.isEmpty()) {
+            return@withContext SpotifyArtistDestination(fallback, false, verification = "完全一致なし: 検索へ")
+        }
+
+        // Same-name ambiguity is dangerous. If multiple exact matches exist, only one may survive
+        // strong genre evidence; otherwise we deliberately show Spotify search results.
+        val scored = exactMatches.map { candidate ->
+            candidate to genreEvidenceScore(artist.genres, jsonArrayStrings(candidate.optJSONArray("genres")))
+        }
+        val candidatesWithEvidence = scored.filter { it.second >= 2 }
+        val chosen: JSONObject = when {
+            exactMatches.size == 1 && scored.single().second >= 2 -> exactMatches.single()
+            exactMatches.size > 1 && candidatesWithEvidence.size == 1 -> candidatesWithEvidence.single().first
+            else -> return@withContext SpotifyArtistDestination(
+                fallback,
+                false,
+                verification = if (exactMatches.size > 1) "同名Artistを一意に特定できない: 検索へ" else "ジャンル本人確認不足: 検索へ"
+            )
+        }
+
         val url = chosen.optJSONObject("external_urls")?.optString("spotify").orEmpty()
-        if (url.isBlank()) return@withContext SpotifyArtistDestination(fallback, false)
-        store.saveSpotifyArtistLink(artistName, url)
-        SpotifyArtistDestination(url, true, chosen.optString("id").takeIf { it.isNotBlank() })
+        if (url.isBlank()) {
+            return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify URLなし: 検索へ")
+        }
+        val id = chosen.optString("id").takeIf { it.isNotBlank() }
+        val verified = SpotifyArtistDestination(url, true, id, "完全一致 + Genre照合")
+        store.saveSpotifyArtistLinkV061(artist, url, id, verified.verification)
+        verified
     }
 
-    private fun normalizeArtistName(value: String): String = value.lowercase()
-        .replace("&", "and")
-        .replace(Regex("[^a-z0-9\\p{L}]+"), "")
+    private fun canonicalExactName(value: String): String = java.text.Normalizer
+        .normalize(value, java.text.Normalizer.Form.NFKC)
+        .trim()
+        .lowercase()
+        .replace(Regex("\\s+"), " ")
+
+    private fun jsonArrayStrings(array: org.json.JSONArray?): List<String> = buildList {
+        if (array != null) for (i in 0 until array.length()) {
+            array.optString(i).trim().takeIf { it.isNotBlank() }?.let(::add)
+        }
+    }
+
+    /**
+     * Conservative genre evidence. Generic "metal" alone is not enough to identify a person/band.
+     * 0 = no evidence, 1 = weak generic evidence, 2+ = usable identity evidence.
+     */
+    private fun genreEvidenceScore(localGenres: List<String>, spotifyGenres: List<String>): Int {
+        if (localGenres.isEmpty() || spotifyGenres.isEmpty()) return 0
+        fun norm(v: String) = v.lowercase().replace('ü', 'u').trim()
+        val locals = localGenres.map(::norm)
+        val remotes = spotifyGenres.map(::norm)
+        var score = 0
+        for (local in locals) for (remote in remotes) {
+            if (local == remote && local != "metal") score = maxOf(score, 4)
+            else if (local.length >= 5 && remote.length >= 5 && (local.contains(remote) || remote.contains(local))) score = maxOf(score, 3)
+        }
+        GenreLensCatalog.lenses.forEach { lens ->
+            val localMatches = lens.aliases.any { alias -> locals.any { it.contains(norm(alias)) } }
+            val remoteMatches = lens.aliases.any { alias -> remotes.any { it.contains(norm(alias)) } }
+            if (localMatches && remoteMatches) score = maxOf(score, 3)
+        }
+        if (score == 0 && locals.any { it.contains("metal") } && remotes.any { it.contains("metal") }) score = 1
+        return score
+    }
+
+    private fun resolveSpotifyFromMusicBrainz(mbid: String): SpotifyArtistDestination? {
+        val safeMbid = mbid.trim()
+        if (safeMbid.isBlank()) return null
+        val url = URL("https://musicbrainz.org/ws/2/artist/${enc(safeMbid)}?inc=url-rels&fmt=json")
+        val c = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("User-Agent", "Metaranai-Android/0.6.1 (Spotify identity resolver)")
+            setRequestProperty("Accept", "application/json")
+        }
+        val code = runCatching { c.responseCode }.getOrElse { return null }
+        val body = runCatching {
+            (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+        }.getOrDefault("")
+        if (code !in 200..299 || body.isBlank()) return null
+        val relations = runCatching { JSONObject(body).optJSONArray("relations") }.getOrNull() ?: return null
+        for (i in 0 until relations.length()) {
+            val relation = relations.optJSONObject(i) ?: continue
+            val resource = relation.optJSONObject("url")?.optString("resource").orEmpty()
+            val parsed = parseSpotifyArtistUrl(resource) ?: continue
+            return SpotifyArtistDestination(parsed.first, true, parsed.second, "MusicBrainz MBIDで本人確認")
+        }
+        return null
+    }
+
+    private fun parseSpotifyArtistUrl(value: String): Pair<String, String?>? {
+        val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
+        val host = uri.host?.lowercase().orEmpty()
+        if (host != "open.spotify.com" && host != "www.open.spotify.com") return null
+        val segments = uri.pathSegments
+        if (segments.size < 2 || segments[0] != "artist") return null
+        val id = segments[1].takeIf { it.isNotBlank() } ?: return null
+        return "https://open.spotify.com/artist/$id" to id
+    }
 
     private suspend fun authorize(clientId: String, onStatus: (String) -> Unit): String {
         verifier = randomString(64)

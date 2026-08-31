@@ -9,7 +9,7 @@ import java.net.URL
 import kotlin.math.roundToInt
 
 /**
- * V0.6.0 external discovery:
+ * V0.6.1 external discovery:
  * - Last.fm similar/tag discovery
  * - Last.fm live artist.search
  * - Last.fm listeners/playcount
@@ -180,8 +180,8 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             .coerceIn(.55f, .99f)
         val confidence = when {
             mb?.mbid != null && info.mbid != null && mb.mbid.equals(info.mbid, true) -> 100
-            mb?.mbid != null -> 82
-            info.mbid != null -> 68
+            info.mbid != null -> 90
+            mb?.mbid != null -> 70
             else -> 45
         }
         val hidden = HiddenScoreEngine.score(info.listeners, info.playcount, discovery, confidence)
@@ -202,7 +202,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             externalScore = (c.match * 100).roundToInt(),
             lastFmListeners = info.listeners,
             lastFmPlaycount = info.playcount,
-            mbid = mb?.mbid ?: info.mbid,
+            mbid = info.mbid ?: mb?.mbid,
             area = mb?.area,
             beginDate = mb?.beginDate,
             endDate = mb?.endDate,
@@ -309,7 +309,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         val query = params.entries.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8") }=${URLEncoder.encode(v, "UTF-8")}" }
         val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 12_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.6.0")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.6.1")
         }
         val code = connection.responseCode
         val body = (if (code in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }

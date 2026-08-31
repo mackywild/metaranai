@@ -16,7 +16,7 @@ import java.time.LocalDateTime
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = LocalStore(app)
-    // V0.6.0: keep V0.5.4 unrated refill; add Personal Metal Archive / Deep Dive / media routes.
+    // V0.6.1: keep Personal Metal Archive and fix Spotify artist identity resolution.
     private val minimumUnratedLensPoolPerGenre = 10
     private val refillTargetUnratedLensPoolPerGenre = 20
     private val engine = RecommendationEngine()
@@ -174,8 +174,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openSpotifyArtist(artist: MetalArtist) {
         _spotifyOpenStatus.value = "Spotify上の${artist.name}を照合中…"
         viewModelScope.launch {
-            val destination = spotify.resolveArtistDestination(artist.name)
-            _spotifyOpenStatus.value = if (destination.direct) "Spotifyアーティストページへ移動" else "完全一致なし: Spotify検索へ移動"
+            val destination = spotify.resolveArtistDestination(artist)
+            _spotifyOpenStatus.value = if (destination.direct) {
+                "本人確認済み: ${destination.verification}"
+            } else {
+                destination.verification.ifBlank { "本人を特定できないためSpotify検索へ移動" }
+            }
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(destination.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             getApplication<Application>().startActivity(intent)
         }
@@ -273,7 +277,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun reactionFor(artistName: String): DiscoveryRecord? =
         _history.value.firstOrNull { it.artistName.equals(artistName, true) }
 
-    fun spotifyLinkCached(artistName: String): Boolean = store.spotifyArtistLink(artistName) != null
+    fun spotifyLinkCached(artist: MetalArtist): Boolean = store.spotifyArtistLinkV061(artist) != null
 
     fun archiveGenreCounts(): List<Pair<String, Int>> = GenreLensCatalog.names()
         .map { it to GenreLensCatalog.filter(allArtists(), listOf(it)).size }

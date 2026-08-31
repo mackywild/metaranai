@@ -161,7 +161,8 @@ data class SpotifySyncResult(
 data class SpotifyArtistDestination(
     val url: String,
     val direct: Boolean,
-    val artistId: String? = null
+    val artistId: String? = null,
+    val verification: String = ""
 )
 
 data class ArtistSearchResult(

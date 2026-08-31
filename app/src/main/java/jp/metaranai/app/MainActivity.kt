@@ -76,7 +76,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.6.0", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.6.1", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -438,7 +438,7 @@ private fun ArchiveScreen(vm: MainViewModel) {
                 Spacer(Modifier.height(5.dp))
                 Text("HIDDEN ${artist.hiddenScore} • 発掘度 ${(artist.discovery * 100).toInt()}% • ${artist.vocalType.label}", color = Acid, fontSize = 10.sp)
                 if (record != null) Text("最終評価 ${record.date} • 当時DNA MATCH ${record.score}%", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
-                if (vm.spotifyLinkCached(artist.name)) Text("Spotify直行リンク取得済み", color = Muted, fontSize = 9.sp, modifier = Modifier.padding(top = 3.dp))
+                if (vm.spotifyLinkCached(artist)) Text("Spotify本人確認済みリンク取得済み", color = Muted, fontSize = 9.sp, modifier = Modifier.padding(top = 3.dp))
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { vm.openSpotifyArtist(artist) }, modifier = Modifier.weight(1f)) { Text("Spotify", fontSize = 11.sp) }
@@ -531,7 +531,7 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("PERSONAL METAL ARCHIVE / V0.6.0") }
+        item { Header("PERSONAL METAL ARCHIVE / V0.6.1") }
         item {
             SettingsCard("GENRE LENS", "指定ジャンルを必須条件にし、そのジャンル内でDNAに合うArtistを選ぶ。候補不足時は先に地下を自動補充する。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -579,7 +579,7 @@ private fun SettingsScreen(vm: MainViewModel) {
         }
         item {
             SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.6.0.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.6.1.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
