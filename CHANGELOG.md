@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+- Spotify Identity Resolver 2: exact-name direct navigation restored when identity evidence is strong.
+- Added MusicBrainz disambiguation using country / area / begin year.
+- Partial-name direct navigation remains prohibited.
+- Same-name ambiguity remains conservative.
+- New verified cache `spotify_artist_links_v062`; old caches are preserved but not auto-read.
+
 ## 0.6.1
 
 - Spotify Artist Identity Resolverを全面修正

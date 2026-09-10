@@ -279,10 +279,60 @@ class LocalStore(context: Context) {
         prefs.edit().putString("spotify_artist_links_v061", root.toString()).apply()
     }
 
+
+    private fun spotifyIdentityKeyV062(artist: MetalArtist): String {
+        // Only trust MBID as a cache identity when the source metadata says it is high-confidence.
+        artist.mbid?.trim()?.lowercase()?.takeIf { it.isNotBlank() && artist.metadataConfidence >= 90 }?.let {
+            return "mbid:$it"
+        }
+        fun norm(value: String?): String = value.orEmpty().trim().lowercase()
+            .replace(Regex("\\s+"), " ")
+        return listOf(
+            "name:${norm(artist.name)}",
+            "country:${norm(artist.country)}",
+            "area:${norm(artist.area)}",
+            "begin:${norm(artist.beginDate)}"
+        ).joinToString("|")
+    }
+
+    /** V0.6.2 verified cache. V0.5 and V0.6.1 caches are preserved but not trusted automatically. */
+    fun spotifyArtistLinkV062(artist: MetalArtist): SpotifyArtistDestination? {
+        val raw = prefs.getString("spotify_artist_links_v062", "{}") ?: "{}"
+        return runCatching {
+            val entry = JSONObject(raw).optJSONObject(spotifyIdentityKeyV062(artist)) ?: return@runCatching null
+            val url = entry.optString("url").takeIf { it.isNotBlank() } ?: return@runCatching null
+            SpotifyArtistDestination(
+                url = url,
+                direct = true,
+                artistId = entry.optString("artistId").takeIf { it.isNotBlank() },
+                verification = entry.optString("verification", "verified cache v0.6.2")
+            )
+        }.getOrNull()
+    }
+
+    fun saveSpotifyArtistLinkV062(
+        artist: MetalArtist,
+        url: String,
+        artistId: String?,
+        verification: String
+    ) {
+        val raw = prefs.getString("spotify_artist_links_v062", "{}") ?: "{}"
+        val root = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+        root.put(spotifyIdentityKeyV062(artist), JSONObject().apply {
+            put("url", url)
+            put("artistId", artistId ?: "")
+            put("verification", verification)
+            put("artistName", artist.name)
+            put("mbid", artist.mbid ?: "")
+            put("metadataConfidence", artist.metadataConfidence)
+        })
+        prefs.edit().putString("spotify_artist_links_v062", root.toString()).apply()
+    }
+
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 61)
+        out.put("version", 62)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {

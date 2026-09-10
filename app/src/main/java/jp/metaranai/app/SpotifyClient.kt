@@ -18,6 +18,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 class SpotifyClient(private val context: Context, private val store: LocalStore) {
+    private val musicBrainz = MusicBrainzClient()
     private val redirectUri = "http://127.0.0.1:8888/callback"
     private var verifier: String = ""
     private var state: String = ""
@@ -40,20 +41,43 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
 
 
     /**
-     * V0.6.1 Spotify Identity Resolver.
-     * Direct navigation is allowed only when the artist identity is verified.
-     * Name-only / partial-name guesses are never opened directly.
+     * V0.6.2 Spotify Identity Resolver.
+     *
+     * Safety rule: partial names never navigate directly.
+     * Usability rule: an exact Spotify name may navigate directly when either
+     * (a) MusicBrainz identity metadata is strong, or (b) the unique exact Spotify result
+     * has useful metal/genre evidence. Same-name ambiguity still falls back to search.
      */
     suspend fun resolveArtistDestination(artist: MetalArtist): SpotifyArtistDestination = withContext(Dispatchers.IO) {
-        store.spotifyArtistLinkV061(artist)?.let { return@withContext it }
+        store.spotifyArtistLinkV062(artist)?.let { return@withContext it }
 
         val fallback = "https://open.spotify.com/search/${enc(artist.name)}"
+        var strongIdentityReason: String? = null
 
-        // Strongest route: MusicBrainz MBID -> URL relationship -> Spotify artist.
+        // Route A: a high-confidence MBID already stored on the Local Metal DB record.
         artist.mbid?.takeIf { it.isNotBlank() && artist.metadataConfidence >= 90 }?.let { mbid ->
             resolveSpotifyFromMusicBrainz(mbid)?.let { verified ->
-                store.saveSpotifyArtistLinkV061(artist, verified.url, verified.artistId, verified.verification)
-                return@withContext verified
+                val out = verified.copy(verification = "MusicBrainz MBIDで本人確認")
+                store.saveSpotifyArtistLinkV062(artist, out.url, out.artistId, out.verification)
+                return@withContext out
+            }
+            // MBID itself is still strong identity evidence even if MusicBrainz has no Spotify URL relation.
+            strongIdentityReason = "高信頼MBID"
+        }
+
+        // Route B: recover a trustworthy MBID from exact name + country/area/begin-year metadata.
+        if (strongIdentityReason == null) {
+            val identity = runCatching { musicBrainz.resolveIdentityForSpotify(artist) }.getOrNull()
+            if (identity != null && identity.confidence >= 80) {
+                val mbid = identity.artist.mbid
+                if (!mbid.isNullOrBlank()) {
+                    resolveSpotifyFromMusicBrainz(mbid)?.let { verified ->
+                        val out = verified.copy(verification = "MusicBrainzメタデータ照合: ${identity.reason}")
+                        store.saveSpotifyArtistLinkV062(artist, out.url, out.artistId, out.verification)
+                        return@withContext out
+                    }
+                    strongIdentityReason = "MusicBrainzメタデータ照合: ${identity.reason}"
+                }
             }
         }
 
@@ -73,7 +97,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
         }
 
         val q = URLEncoder.encode("artist:\"${artist.name}\"", Charsets.UTF_8.name())
-        val json = runCatching { getJson("https://api.spotify.com/v1/search?q=$q&type=artist&limit=10", token) }.getOrNull()
+        val json = runCatching { getJson("https://api.spotify.com/v1/search?q=$q&type=artist&limit=20", token) }.getOrNull()
             ?: return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify照合失敗: 検索へ")
         val items = json.optJSONObject("artists")?.optJSONArray("items")
             ?: return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify候補なし: 検索へ")
@@ -85,34 +109,45 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
             if (canonicalExactName(candidate.optString("name")) == target) exactMatches += candidate
         }
 
-        // Partial matches are intentionally rejected in V0.6.1.
+        // Partial names are never direct candidates.
         if (exactMatches.isEmpty()) {
             return@withContext SpotifyArtistDestination(fallback, false, verification = "完全一致なし: 検索へ")
         }
 
-        // Same-name ambiguity is dangerous. If multiple exact matches exist, only one may survive
-        // strong genre evidence; otherwise we deliberately show Spotify search results.
         val scored = exactMatches.map { candidate ->
             candidate to genreEvidenceScore(artist.genres, jsonArrayStrings(candidate.optJSONArray("genres")))
         }
-        val candidatesWithEvidence = scored.filter { it.second >= 2 }
-        val chosen: JSONObject = when {
-            exactMatches.size == 1 && scored.single().second >= 2 -> exactMatches.single()
-            exactMatches.size > 1 && candidatesWithEvidence.size == 1 -> candidatesWithEvidence.single().first
+
+        val chosen: Pair<JSONObject, String> = when {
+            // Unique exact-name result: allow direct navigation with either metadata identity evidence
+            // or actual Spotify metal/genre evidence. Generic metal is sufficient only in this unique case.
+            exactMatches.size == 1 && strongIdentityReason != null ->
+                exactMatches.single() to "$strongIdentityReason + Spotify名前完全一致"
+            exactMatches.size == 1 && scored.single().second >= 2 ->
+                exactMatches.single() to "Spotify名前完全一致 + Genre照合"
+            exactMatches.size == 1 && scored.single().second == 1 ->
+                exactMatches.single() to "Spotify名前完全一致 + Metal系Genre照合"
+
+            // Same-name artists remain dangerous: require exactly one candidate with strong genre evidence.
+            exactMatches.size > 1 && scored.count { it.second >= 2 } == 1 -> {
+                val winner = scored.single { it.second >= 2 }.first
+                winner to "同名候補からGenreで一意確認"
+            }
+            exactMatches.size > 1 -> return@withContext SpotifyArtistDestination(
+                fallback, false, verification = "同名Artistを一意に特定できない: 検索へ"
+            )
             else -> return@withContext SpotifyArtistDestination(
-                fallback,
-                false,
-                verification = if (exactMatches.size > 1) "同名Artistを一意に特定できない: 検索へ" else "ジャンル本人確認不足: 検索へ"
+                fallback, false, verification = "名前は完全一致だが本人確認材料不足: 検索へ"
             )
         }
 
-        val url = chosen.optJSONObject("external_urls")?.optString("spotify").orEmpty()
+        val url = chosen.first.optJSONObject("external_urls")?.optString("spotify").orEmpty()
         if (url.isBlank()) {
             return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify URLなし: 検索へ")
         }
-        val id = chosen.optString("id").takeIf { it.isNotBlank() }
-        val verified = SpotifyArtistDestination(url, true, id, "完全一致 + Genre照合")
-        store.saveSpotifyArtistLinkV061(artist, url, id, verified.verification)
+        val id = chosen.first.optString("id").takeIf { it.isNotBlank() }
+        val verified = SpotifyArtistDestination(url, true, id, chosen.second)
+        store.saveSpotifyArtistLinkV062(artist, url, id, verified.verification)
         verified
     }
 
@@ -152,39 +187,8 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     }
 
     private fun resolveSpotifyFromMusicBrainz(mbid: String): SpotifyArtistDestination? {
-        val safeMbid = mbid.trim()
-        if (safeMbid.isBlank()) return null
-        val url = URL("https://musicbrainz.org/ws/2/artist/${enc(safeMbid)}?inc=url-rels&fmt=json")
-        val c = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.6.1 (Spotify identity resolver)")
-            setRequestProperty("Accept", "application/json")
-        }
-        val code = runCatching { c.responseCode }.getOrElse { return null }
-        val body = runCatching {
-            (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-        }.getOrDefault("")
-        if (code !in 200..299 || body.isBlank()) return null
-        val relations = runCatching { JSONObject(body).optJSONArray("relations") }.getOrNull() ?: return null
-        for (i in 0 until relations.length()) {
-            val relation = relations.optJSONObject(i) ?: continue
-            val resource = relation.optJSONObject("url")?.optString("resource").orEmpty()
-            val parsed = parseSpotifyArtistUrl(resource) ?: continue
-            return SpotifyArtistDestination(parsed.first, true, parsed.second, "MusicBrainz MBIDで本人確認")
-        }
-        return null
-    }
-
-    private fun parseSpotifyArtistUrl(value: String): Pair<String, String?>? {
-        val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
-        val host = uri.host?.lowercase().orEmpty()
-        if (host != "open.spotify.com" && host != "www.open.spotify.com") return null
-        val segments = uri.pathSegments
-        if (segments.size < 2 || segments[0] != "artist") return null
-        val id = segments[1].takeIf { it.isNotBlank() } ?: return null
-        return "https://open.spotify.com/artist/$id" to id
+        val parsed = musicBrainz.spotifyArtistRelation(mbid) ?: return null
+        return SpotifyArtistDestination(parsed.first, true, parsed.second, "MusicBrainz MBIDで本人確認")
     }
 
     private suspend fun authorize(clientId: String, onStatus: (String) -> Unit): String {
