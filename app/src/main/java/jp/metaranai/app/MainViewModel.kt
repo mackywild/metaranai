@@ -16,7 +16,7 @@ import java.time.LocalDateTime
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = LocalStore(app)
-    // V0.6.2: keep Personal Metal Archive and improve safe Spotify direct resolution.
+    // V0.6.3: keep Personal Metal Archive and add track-fingerprint Spotify identity resolution.
     private val minimumUnratedLensPoolPerGenre = 10
     private val refillTargetUnratedLensPoolPerGenre = 20
     private val engine = RecommendationEngine()
@@ -277,7 +277,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun reactionFor(artistName: String): DiscoveryRecord? =
         _history.value.firstOrNull { it.artistName.equals(artistName, true) }
 
-    fun spotifyLinkCached(artist: MetalArtist): Boolean = store.spotifyArtistLinkV062(artist) != null
+    fun spotifyLinkCached(artist: MetalArtist): Boolean = store.spotifyArtistLinkV063(artist) != null
 
     fun archiveGenreCounts(): List<Pair<String, Int>> = GenreLensCatalog.names()
         .map { it to GenreLensCatalog.filter(allArtists(), listOf(it)).size }

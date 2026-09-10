@@ -309,7 +309,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         val query = params.entries.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8") }=${URLEncoder.encode(v, "UTF-8")}" }
         val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 12_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.6.2")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.6.3")
         }
         val code = connection.responseCode
         val body = (if (code in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }

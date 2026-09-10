@@ -329,10 +329,45 @@ class LocalStore(context: Context) {
         prefs.edit().putString("spotify_artist_links_v062", root.toString()).apply()
     }
 
+    /** V0.6.3 track-fingerprint verified cache. Older verified caches are preserved but not auto-read. */
+    fun spotifyArtistLinkV063(artist: MetalArtist): SpotifyArtistDestination? {
+        val raw = prefs.getString("spotify_artist_links_v063", "{}") ?: "{}"
+        return runCatching {
+            val entry = JSONObject(raw).optJSONObject(spotifyIdentityKeyV062(artist)) ?: return@runCatching null
+            val url = entry.optString("url").takeIf { it.isNotBlank() } ?: return@runCatching null
+            SpotifyArtistDestination(
+                url = url,
+                direct = true,
+                artistId = entry.optString("artistId").takeIf { it.isNotBlank() },
+                verification = entry.optString("verification", "verified cache v0.6.3")
+            )
+        }.getOrNull()
+    }
+
+    fun saveSpotifyArtistLinkV063(
+        artist: MetalArtist,
+        url: String,
+        artistId: String?,
+        verification: String
+    ) {
+        val raw = prefs.getString("spotify_artist_links_v063", "{}") ?: "{}"
+        val root = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+        root.put(spotifyIdentityKeyV062(artist), JSONObject().apply {
+            put("url", url)
+            put("artistId", artistId ?: "")
+            put("verification", verification)
+            put("artistName", artist.name)
+            put("mbid", artist.mbid ?: "")
+            put("metadataConfidence", artist.metadataConfidence)
+            put("verifiedBy", "v0.6.3-track-fingerprint")
+        })
+        prefs.edit().putString("spotify_artist_links_v063", root.toString()).apply()
+    }
+
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 62)
+        out.put("version", 63)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {

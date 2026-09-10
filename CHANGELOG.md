@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.3
+- Spotify Searchの2026年仕様に対応し、`limit=20` を廃止して `limit=10` + offset pagingへ変更。
+- Last.fm `artist.getTopTracks` とSpotify収録曲を照合するTrack Fingerprintを追加。
+- 完全一致1件 + 2曲以上一致でSpotify Artistページへ直接遷移。
+- 1曲一致時は高信頼MBID / MusicBrainzメタデータ / Genre証拠を補助条件として使用。
+- 同名Artistが複数いる場合は、曲指紋で一意の勝者が出た場合のみ直行。
+- Spotify曲検索結果はSpotify Artist IDでフィルタし、同名別Artistの曲を混ぜない。
+- Spotify Track Searchが少ない場合はArtist Albums / Album Tracksで曲指紋を補完。
+- 2026年に削除されたSpotify Artist Top Tracks endpointは使用しない。
+- 新しい本人確認済みcache `spotify_artist_links_v063` を使用し、v0.6.2以前のcacheは自動利用しない。
+
 ## 0.6.2
 - Spotify Identity Resolver 2: exact-name direct navigation restored when identity evidence is strong.
 - Added MusicBrainz disambiguation using country / area / begin year.

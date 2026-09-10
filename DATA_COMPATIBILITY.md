@@ -1,13 +1,13 @@
-# Data compatibility contract: V0.4〜V0.6.0 → V0.6.1
+# Data compatibility contract: V0.4〜V0.6.2 → V0.6.3
 
-V0.6.1 is an additive update. Existing analysis data remains the compatibility contract.
+V0.6.3 is additive. Existing analysis data remains the compatibility contract.
 
-| Item | Existing data | V0.6.0 behavior |
+| Item | Existing data | V0.6.3 behavior |
 |---|---|---|
 | applicationId | `jp.metaranai.app` | unchanged |
 | prefs file | `metaranai` | unchanged |
 | `profile` | existing Metal DNA JSON | unchanged |
-| `history` | V0.4〜V0.5.4 records | loaded and preserved |
+| `history` | V0.4〜V0.6.2 records | loaded and preserved |
 | old `HIT` | 刺さった | maps to `普通に刺さる` |
 | old `MAYBE` | 微妙 | maps to `何曲か刺さる` |
 | old `MISS` | 刺さらない | maps to `イマイチ` |
@@ -17,15 +17,10 @@ V0.6.1 is an additive update. Existing analysis data remains the compatibility c
 | Last.fm API key | legacy key | unchanged |
 | Genre Lens | `genre_lens_v05` | unchanged |
 | Vocal DNA | `vocal_profile_v05` | unchanged |
-| Spotify direct-link cache | `spotify_artist_links_v05` | unchanged |
+| Old Spotify link caches | `spotify_artist_links_v05/v061/v062` | preserved, not auto-trusted |
+| New Spotify verified cache | none | `spotify_artist_links_v063` added |
 
-Personal Metal Archive and Deep Dive reuse the existing data structures. Deep Dive only merges additional Artist records into `external_artists`; it does not replace the archive.
-
-V0.6.0 never infers the two extreme ratings from legacy data. A legacy HIT is **not** promoted to `全部好き`, and a legacy MISS is **not** demoted to `興味なし`.
+Personal Metal Archive, Deep Dive, Strict Genre Lens and the five-level rating history remain unchanged.
+V0.6.3 only changes Spotify identity resolution and its verified-link cache.
 
 No `SharedPreferences.clear()` or destructive migration is performed.
-
-
-## V0.6.1 Spotify cache migration
-
-`spotify_artist_links_v05` is preserved for backup compatibility but is no longer read for direct navigation. V0.6.1 stores only verified identity links in `spotify_artist_links_v061`; all profile/history/archive data remain unchanged.
