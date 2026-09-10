@@ -149,3 +149,7 @@ Strict Genre candidates
 `DEEP DIVE` は任意ArtistをSeedとしてSimilar Artistsを取得し、評価済みArtistを通常候補から外した上でPersonal METAL DNA・HIDDEN・discoveryを使って表示順を決める。新たに取得したArtistは既存の `external_artists` キーへマージされるため、V0.5系のデータ互換を壊さない。
 
 YouTube導線は外部検索URLを使うため追加API Keyを要求しない。Spotifyはv0.6.3でTrack Fingerprint本人確認を行う。高信頼MBIDを最優先し、完全一致Artist候補についてLast.fm Top TracksとSpotify収録曲を照合する。同名候補は曲指紋で一意に絞れた場合のみ直行し、判定不能時はSpotify検索へフォールバックする。
+
+
+## Spotify Identity v0.6.4
+Spotify direct navigation is conservative and multi-catalog. Partial names never direct. The resolver searches Spotify by plain artist name and field-filter query, filters to exact names, obtains candidate catalogs by Spotify Artist ID, and cross-checks tracks/albums against independent Last.fm and Apple/iTunes catalog evidence. Apple results are grouped by Apple artistId to avoid merging same-name artists. `spotify_artist_links_v064` stores only verified direct links.

@@ -25,7 +25,7 @@ class MusicBrainzClient {
     }
 
     /**
-     * V0.6.3 identity resolver for Spotify navigation.
+     * V0.6.4 identity resolver for Spotify navigation.
      *
      * MusicBrainz search score or artist name alone is NOT enough. The result must have an
      * exact canonical artist name and at least one real discriminator from the Local Metal DB
@@ -109,7 +109,7 @@ class MusicBrainzClient {
         val url = URL("https://musicbrainz.org/ws/2/artist/${URLEncoder.encode(safe, "UTF-8")}?inc=url-rels&fmt=json")
         val c = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 10_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.6.3 (Spotify identity resolver)")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.6.4 (Spotify identity resolver)")
             setRequestProperty("Accept", "application/json")
         }
         val code = runCatching { c.responseCode }.getOrElse { return null }
@@ -133,7 +133,7 @@ class MusicBrainzClient {
         val url = URL("https://musicbrainz.org/ws/2/artist/?query=$q&fmt=json&limit=$limit")
         val c = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 10_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.6.3 (music discovery prototype)")
+            setRequestProperty("User-Agent", "Metaranai-Android/0.6.4 (music discovery prototype)")
             setRequestProperty("Accept", "application/json")
         }
         val code = runCatching { c.responseCode }.getOrElse { return null }

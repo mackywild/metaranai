@@ -8,8 +8,8 @@ store=(root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
 ext=(root/'app/src/main/java/jp/metaranai/app/ExternalDiscoveryClient.kt').read_text()
 workflow=(root/'.github/workflows/android.yml').read_text()
 
-assert 'versionCode = 13' in build
-assert 'versionName = "0.6.3"' in build
+assert 'versionCode = 14' in build
+assert 'versionName = "0.6.4"' in build
 assert 'val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")' in ui
 assert 'private fun ArchiveScreen' in ui
 for marker in ['PERSONAL METAL ARCHIVE','未評価','GenreLensCatalog.names()','VocalType.FEMALE','Spotify本人確認済みリンク取得済み']:
@@ -23,7 +23,7 @@ assert 'android:icon="@mipmap/ic_launcher"' in manifest
 assert 'android:roundIcon="@mipmap/ic_launcher_round"' in manifest
 for density in ['mdpi','hdpi','xhdpi','xxhdpi','xxxhdpi']:
     assert (root/f'app/src/main/res/mipmap-{density}/ic_launcher.png').exists(), density
-assert 'out.put("version", 63)' in store
-assert 'Metaranai-Android/0.6.3' in ext
-assert 'metaranai-v0.6.3-apk' in workflow
+assert 'out.put("version", 64)' in store
+assert 'Metaranai-Android/0.6.4' in ext
+assert 'metaranai-v0.6.4-apk' in workflow
 print('V060_PERSONAL_METAL_ARCHIVE_OK')

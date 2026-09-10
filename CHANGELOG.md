@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.4
+- `Yutaro Abe's ASTRAL WIND` 実ケースでSpotify Identity Resolverを再試験し、v0.6.3の不足を修正。
+- Spotify Artist SearchをUIに近い通常名前検索 + artist field検索の二経路に変更。
+- Spotify Genre（deprecated / 空になり得る）への依存を本人確認の主経路から外した。
+- Last.fm Top Tracksが空/疎な地下Artist向けに、Apple/iTunes Search APIを独立Catalog Fingerprintとして追加。
+- Apple結果はartistId単位に分離し、同名Artistの曲を混在させない。
+- Spotify候補はArtist ID単位でAlbums / Album Tracksまで取得し、曲名 + Album名を照合。
+- 完全一致1件でも、2曲以上・2Album以上・曲+Album一致など強い独立証拠がある場合のみ直行。
+- 同名Artist複数は1候補だけが明確に強いCatalog Fingerprintを持つ場合のみ直行。
+- 新cache `spotify_artist_links_v064` を使用し、v0.6.3以前の判定を自動再利用しない。
+- 旧v0.6.3のASTRAL WIND試験がハードコードのみだった点を修正し、Last.fm空 + Apple Catalog有りの回帰ケースを追加。
+
 ## 0.6.3
 - Spotify Searchの2026年仕様に対応し、`limit=20` を廃止して `limit=10` + offset pagingへ変更。
 - Last.fm `artist.getTopTracks` とSpotify収録曲を照合するTrack Fingerprintを追加。

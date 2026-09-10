@@ -41,35 +41,33 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
 
 
     /**
-     * V0.6.3 Spotify Identity Resolver.
+     * V0.6.4 Spotify Identity Resolver.
      *
-     * Identity priority:
-     * 1) trusted MusicBrainz MBID -> explicit Spotify relation,
-     * 2) exact Spotify artist name + track fingerprint against Last.fm,
-     * 3) exact name + strong metadata/genre evidence,
-     * 4) otherwise Spotify search fallback.
-     *
-     * Partial artist names never navigate directly. Same-name artists need a unique
-     * fingerprint/metadata winner. This keeps the v0.6.1 safety rule while restoring
-     * direct navigation for underground artists whose Spotify genre metadata is empty.
+     * Key fixes after the real Yutaro Abe's ASTRAL WIND regression:
+     * - search Spotify the same way a user does (plain artist name) in addition to field-filter search,
+     * - do not depend on Spotify genres (deprecated / frequently empty),
+     * - fingerprint the Spotify candidate catalog against TWO independent catalogs:
+     *   Last.fm top tracks and Apple's public iTunes Search catalog,
+     * - compare both track names and album names,
+     * - same-name artists still require a unique evidence winner.
      */
     suspend fun resolveArtistDestination(artist: MetalArtist): SpotifyArtistDestination = withContext(Dispatchers.IO) {
-        store.spotifyArtistLinkV063(artist)?.let { return@withContext it }
+        store.spotifyArtistLinkV064(artist)?.let { return@withContext it }
 
         val fallback = "https://open.spotify.com/search/${enc(artist.name)}"
         var strongIdentityReason: String? = null
 
-        // Route A: a high-confidence MBID already stored on the Local Metal DB record.
+        // Route A: trusted MBID -> explicit Spotify relation.
         artist.mbid?.takeIf { it.isNotBlank() && artist.metadataConfidence >= 90 }?.let { mbid ->
             resolveSpotifyFromMusicBrainz(mbid)?.let { verified ->
                 val out = verified.copy(verification = "MusicBrainz MBIDで本人確認")
-                store.saveSpotifyArtistLinkV063(artist, out.url, out.artistId, out.verification)
+                store.saveSpotifyArtistLinkV064(artist, out.url, out.artistId, out.verification)
                 return@withContext out
             }
             strongIdentityReason = "高信頼MBID"
         }
 
-        // Route B: recover a trustworthy MBID from exact name + country/area/begin-year metadata.
+        // Route B: recover a trustworthy MBID from Local DB metadata.
         if (strongIdentityReason == null) {
             val identity = runCatching { musicBrainz.resolveIdentityForSpotify(artist) }.getOrNull()
             if (identity != null && identity.confidence >= 80) {
@@ -77,7 +75,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
                 if (!mbid.isNullOrBlank()) {
                     resolveSpotifyFromMusicBrainz(mbid)?.let { verified ->
                         val out = verified.copy(verification = "MusicBrainzメタデータ照合: ${identity.reason}")
-                        store.saveSpotifyArtistLinkV063(artist, out.url, out.artistId, out.verification)
+                        store.saveSpotifyArtistLinkV064(artist, out.url, out.artistId, out.verification)
                         return@withContext out
                     }
                     strongIdentityReason = "MusicBrainzメタデータ照合: ${identity.reason}"
@@ -100,87 +98,89 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
             return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify未認証: 検索へ")
         }
 
-        val q = URLEncoder.encode("artist:\"${artist.name}\"", Charsets.UTF_8.name())
-        // Spotify Search is capped at 10 per request in the 2026 Web API. Paginate two pages
-        // so we keep the old breadth without sending an invalid limit=20 request.
-        val target = canonicalExactName(artist.name)
-        val exactMatches = mutableListOf<JSONObject>()
-        val seenIds = mutableSetOf<String>()
-        var firstSearchWorked = false
-        for (offset in listOf(0, 10)) {
-            val page = runCatching {
-                getJson("https://api.spotify.com/v1/search?q=$q&type=artist&limit=10&offset=$offset", token)
-            }.getOrNull() ?: if (offset == 0) {
-                return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify照合失敗: 検索へ")
-            } else break
-            firstSearchWorked = true
-            val items = page.optJSONObject("artists")?.optJSONArray("items") ?: break
-            for (i in 0 until items.length()) {
-                val candidate = items.optJSONObject(i) ?: continue
-                if (canonicalExactName(candidate.optString("name")) != target) continue
-                val id = candidate.optString("id")
-                if (id.isBlank() || seenIds.add(id)) exactMatches += candidate
-            }
-            if (items.length() < 10) break
-        }
-
-        if (!firstSearchWorked) {
-            return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify照合失敗: 検索へ")
-        }
-
-        // Partial names are never direct candidates.
+        val exactMatches = runCatching { spotifyExactArtistMatches(artist.name, token) }.getOrDefault(emptyList())
         if (exactMatches.isEmpty()) {
-            return@withContext SpotifyArtistDestination(fallback, false, verification = "完全一致なし: 検索へ")
+            return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify完全一致なし: 検索へ")
         }
 
-        val localTracks = runCatching { lastFmTopTrackNames(artist, 20) }.getOrDefault(emptyList())
+        // Independent catalog evidence. Last.fm can be sparse for underground artists, so Apple is
+        // a fallback/second opinion rather than silently treating missing Last.fm data as a mismatch.
+        val lastFmTracks = runCatching { lastFmTopTrackNames(artist, 40) }.getOrDefault(emptyList())
+        val appleGroups = runCatching { appleCatalogGroups(artist.name) }.getOrDefault(emptyList())
+
         val fingerprints = exactMatches.map { candidate ->
-            val spotifyTracks = runCatching { spotifyTrackNamesForCandidate(candidate, token) }.getOrDefault(emptyList())
+            val catalog = runCatching { spotifyCatalogForCandidate(candidate, token) }
+                .getOrDefault(SpotifyCatalog(emptyList(), emptyList()))
+
+            val evidences = mutableListOf<CatalogEvidence>()
+            if (lastFmTracks.isNotEmpty()) {
+                evidences += CatalogEvidence(
+                    source = "Last.fm",
+                    trackMatches = matchingNames(lastFmTracks, catalog.tracks, ::canonicalTrackName),
+                    albumMatches = emptyList()
+                )
+            }
+            appleGroups.forEach { group ->
+                evidences += CatalogEvidence(
+                    source = "Apple Catalog",
+                    trackMatches = matchingNames(group.tracks, catalog.tracks, ::canonicalTrackName),
+                    albumMatches = matchingNames(group.albums, catalog.albums, ::canonicalAlbumName)
+                )
+            }
+            val bestEvidence = evidences.maxByOrNull { it.score } ?: CatalogEvidence("なし", emptyList(), emptyList())
             CandidateFingerprint(
                 candidate = candidate,
                 genreScore = genreEvidenceScore(artist.genres, jsonArrayStrings(candidate.optJSONArray("genres"))),
-                trackMatches = matchingTrackNames(localTracks, spotifyTracks),
-                spotifyTrackCount = spotifyTracks.size
+                catalog = catalog,
+                evidence = bestEvidence
             )
         }
 
+        fun isStrong(fp: CandidateFingerprint): Boolean =
+            fp.evidence.trackMatches.size >= 2 ||
+                fp.evidence.albumMatches.size >= 2 ||
+                (fp.evidence.trackMatches.isNotEmpty() && fp.evidence.albumMatches.isNotEmpty())
+
+        fun reasonFor(fp: CandidateFingerprint): String = buildString {
+            append("Spotify名前完全一致 + ${fp.evidence.source}照合")
+            if (fp.evidence.trackMatches.isNotEmpty()) append(" 曲${fp.evidence.trackMatches.size}件")
+            if (fp.evidence.albumMatches.isNotEmpty()) append(" Album${fp.evidence.albumMatches.size}件")
+        }
+
         val chosen: Pair<JSONObject, String> = when {
-            // A unique exact-name candidate with 2+ shared track titles is a strong catalog fingerprint.
-            exactMatches.size == 1 && fingerprints.single().trackMatches.size >= 2 -> {
+            exactMatches.size == 1 && isStrong(fingerprints.single()) -> {
                 val fp = fingerprints.single()
-                fp.candidate to "Spotify名前完全一致 + 曲指紋${fp.trackMatches.size}曲一致"
+                fp.candidate to reasonFor(fp)
             }
 
-            // One shared non-generic track plus independent metadata/genre evidence is also enough.
-            exactMatches.size == 1 && fingerprints.single().trackMatches.size == 1 &&
+            exactMatches.size == 1 && fingerprints.single().evidence.trackMatches.size == 1 &&
                 (strongIdentityReason != null || fingerprints.single().genreScore >= 1) -> {
                 val fp = fingerprints.single()
                 val support = strongIdentityReason ?: "Genre照合"
-                fp.candidate to "Spotify名前完全一致 + 曲指紋1曲一致 + $support"
+                fp.candidate to "${reasonFor(fp)} + $support"
             }
 
-            // Keep v0.6.2 direct paths when track data is unavailable.
+            // Metadata evidence remains a safe fallback when external catalog services have no data.
             exactMatches.size == 1 && strongIdentityReason != null ->
                 exactMatches.single() to "$strongIdentityReason + Spotify名前完全一致"
             exactMatches.size == 1 && fingerprints.single().genreScore >= 2 ->
                 exactMatches.single() to "Spotify名前完全一致 + Genre照合"
-            exactMatches.size == 1 && fingerprints.single().genreScore == 1 ->
-                exactMatches.single() to "Spotify名前完全一致 + Metal系Genre照合"
 
-            // Same-name artists: track fingerprint must produce one clear winner.
+            // Same-name artists require ONE clearly stronger catalog fingerprint.
             exactMatches.size > 1 -> {
-                val sorted = fingerprints.sortedByDescending { it.trackMatches.size }
+                val sorted = fingerprints.sortedByDescending { it.evidence.score }
                 val winner = sorted.first()
                 val runnerUp = sorted.getOrNull(1)
-                if (winner.trackMatches.size >= 2 && winner.trackMatches.size > (runnerUp?.trackMatches?.size ?: 0)) {
-                    winner.candidate to "同名候補から曲指紋${winner.trackMatches.size}曲で一意確認"
+                if (isStrong(winner) && winner.evidence.score >= (runnerUp?.evidence?.score ?: 0) + 3) {
+                    winner.candidate to "同名候補から${winner.evidence.source}曲/Album指紋で一意確認"
                 } else {
                     val strongGenre = fingerprints.filter { it.genreScore >= 2 }
-                    if (strongGenre.size == 1 && winner.trackMatches.isEmpty()) {
+                    if (strongGenre.size == 1 && sorted.all { it.evidence.score == 0 }) {
                         strongGenre.single().candidate to "同名候補からGenreで一意確認"
                     } else {
                         return@withContext SpotifyArtistDestination(
-                            fallback, false, verification = "同名Artistを曲/Genreで一意に特定できない: 検索へ"
+                            fallback, false,
+                            verification = "同名Artistを独立カタログで一意に特定できない: 検索へ"
                         )
                     }
                 }
@@ -188,10 +188,11 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
 
             else -> return@withContext SpotifyArtistDestination(
                 fallback, false,
-                verification = if (localTracks.isEmpty()) {
-                    "名前は完全一致だがLast.fm曲指紋を取得できず本人確認材料不足: 検索へ"
-                } else {
-                    "名前は完全一致だが曲指紋が一致しないため検索へ"
+                verification = buildString {
+                    append("名前は完全一致だが本人確認材料不足")
+                    if (lastFmTracks.isEmpty()) append(" / Last.fm曲0")
+                    if (appleGroups.isEmpty()) append(" / Apple候補0")
+                    append(": 検索へ")
                 }
             )
         }
@@ -202,22 +203,65 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
         }
         val id = chosen.first.optString("id").takeIf { it.isNotBlank() }
         val verified = SpotifyArtistDestination(url, true, id, chosen.second)
-        store.saveSpotifyArtistLinkV063(artist, url, id, verified.verification)
+        store.saveSpotifyArtistLinkV064(artist, url, id, verified.verification)
         verified
     }
 
     private data class CandidateFingerprint(
         val candidate: JSONObject,
         val genreScore: Int,
-        val trackMatches: List<String>,
-        val spotifyTrackCount: Int
+        val catalog: SpotifyCatalog,
+        val evidence: CatalogEvidence
     )
 
+    private data class SpotifyCatalog(
+        val tracks: List<String>,
+        val albums: List<String>
+    )
+
+    private data class ExternalCatalogGroup(
+        val id: String,
+        val tracks: List<String>,
+        val albums: List<String>
+    )
+
+    private data class CatalogEvidence(
+        val source: String,
+        val trackMatches: List<String>,
+        val albumMatches: List<String>
+    ) {
+        // Album matches are highly discriminating for same-name artists.
+        val score: Int get() = trackMatches.size * 3 + albumMatches.size * 4
+    }
+
     /**
-     * Last.fm is the identity-side catalog fingerprint. Prefer a trusted MBID when present;
-     * otherwise use the exact Local Metal DB artist name. artist.getTopTracks does not require
-     * user authentication, only the existing Last.fm API key.
+     * Search like the Spotify UI first (plain name), then add the field-filter query as a second path.
+     * Only canonical exact-name candidates survive either search, and IDs are deduplicated.
      */
+    private fun spotifyExactArtistMatches(artistName: String, token: String): List<JSONObject> {
+        val target = canonicalExactName(artistName)
+        val found = linkedMapOf<String, JSONObject>()
+        val queries = listOf(artistName, "artist:\"$artistName\"")
+        for (queryText in queries.distinct()) {
+            val q = URLEncoder.encode(queryText, Charsets.UTF_8.name())
+            for (offset in listOf(0, 10, 20)) {
+                val page = runCatching {
+                    getJson("https://api.spotify.com/v1/search?q=$q&type=artist&limit=10&offset=$offset", token)
+                }.getOrNull() ?: break
+                val items = page.optJSONObject("artists")?.optJSONArray("items") ?: break
+                for (i in 0 until items.length()) {
+                    val candidate = items.optJSONObject(i) ?: continue
+                    if (canonicalExactName(candidate.optString("name")) != target) continue
+                    val id = candidate.optString("id").trim()
+                    if (id.isNotBlank()) found.putIfAbsent(id, candidate)
+                }
+                if (items.length() < 10) break
+            }
+        }
+        return found.values.toList()
+    }
+
+    /** Last.fm catalog fingerprint. */
     private fun lastFmTopTrackNames(artist: MetalArtist, limit: Int): List<String> {
         val apiKey = store.lastFmApiKey().trim()
         if (apiKey.isBlank()) return emptyList()
@@ -231,17 +275,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
         val trustedMbid = artist.mbid?.takeIf { it.isNotBlank() && artist.metadataConfidence >= 90 }
         if (trustedMbid != null) params["mbid"] = trustedMbid else params["artist"] = artist.name
         val query = params.entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
-        val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 12_000
-            setRequestProperty("User-Agent", "Metaranai-Android/0.6.3 (Spotify track identity)")
-        }
-        val code = connection.responseCode
-        val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
-            .bufferedReader().use { it.readText() }
-        if (code !in 200..299) return emptyList()
-        val json = runCatching { JSONObject(body) }.getOrNull() ?: return emptyList()
+        val json = getPublicJson("https://ws.audioscrobbler.com/2.0/?$query", "Metaranai-Android/0.6.4")
         if (json.has("error")) return emptyList()
         val tracks = json.optJSONObject("toptracks")?.optJSONArray("track") ?: return emptyList()
         return buildList {
@@ -252,56 +286,121 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     }
 
     /**
-     * Spotify removed the old artist top-tracks endpoint in 2026. Build a candidate fingerprint
-     * using the supported Search endpoint, then fall back to the candidate's own albums if search
-     * is too sparse. Every track is filtered by Spotify artist ID, so same-name artists cannot
-     * leak tracks into each other's fingerprints.
+     * Independent catalog fallback for underground artists whose Last.fm top-track data is absent.
+     * Apple's iTunes Search API is public/no-key. Results are grouped by Apple artistId so same-name
+     * artists are not merged into one artificial catalog.
      */
-    private fun spotifyTrackNamesForCandidate(candidate: JSONObject, token: String): List<String> {
+    private fun appleCatalogGroups(artistName: String): List<ExternalCatalogGroup> {
+        val target = canonicalExactName(artistName)
+        val groups = linkedMapOf<String, Pair<LinkedHashSet<String>, LinkedHashSet<String>>>()
+
+        for (country in listOf("JP", "US")) {
+            // First resolve exact Apple artist identities, then lookup their songs by artistId.
+            val artistSearchUrl = "https://itunes.apple.com/search?term=${enc(artistName)}" +
+                "&country=$country&media=music&entity=musicArtist&attribute=artistTerm&limit=50"
+            val artistSearch = runCatching { getPublicJson(artistSearchUrl, "Metaranai-Android/0.6.4") }.getOrNull()
+            val artists = artistSearch?.optJSONArray("results")
+            val exactAppleIds = linkedSetOf<String>()
+            if (artists != null) {
+                for (i in 0 until artists.length()) {
+                    val item = artists.optJSONObject(i) ?: continue
+                    if (canonicalExactName(item.optString("artistName")) != target) continue
+                    item.opt("artistId")?.toString()?.takeIf { it.isNotBlank() }?.let(exactAppleIds::add)
+                }
+            }
+
+            for (artistId in exactAppleIds) {
+                val lookupUrl = "https://itunes.apple.com/lookup?id=$artistId&entity=song&limit=200&sort=recent&country=$country"
+                val json = runCatching { getPublicJson(lookupUrl, "Metaranai-Android/0.6.4") }.getOrNull() ?: continue
+                val results = json.optJSONArray("results") ?: continue
+                val pair = groups.getOrPut(artistId) { linkedSetOf<String>() to linkedSetOf() }
+                for (i in 0 until results.length()) {
+                    val item = results.optJSONObject(i) ?: continue
+                    // lookup response starts with the artist object; only song rows have trackName.
+                    if (item.optString("wrapperType") != "track") continue
+                    if (canonicalExactName(item.optString("artistName")) != target) continue
+                    item.optString("trackName").trim().takeIf { it.isNotBlank() }?.let(pair.first::add)
+                    item.optString("collectionName").trim().takeIf { it.isNotBlank() }?.let(pair.second::add)
+                }
+            }
+
+            // Some storefronts fail to return a musicArtist row for small artists. Fall back to an
+            // artist-term song search, still grouping by Apple artistId so duplicates stay separated.
+            if (groups.isEmpty()) {
+                val songSearchUrl = "https://itunes.apple.com/search?term=${enc(artistName)}" +
+                    "&country=$country&media=music&entity=song&attribute=artistTerm&limit=200"
+                val json = runCatching { getPublicJson(songSearchUrl, "Metaranai-Android/0.6.4") }.getOrNull()
+                val results = json?.optJSONArray("results")
+                if (results != null) {
+                    for (i in 0 until results.length()) {
+                        val item = results.optJSONObject(i) ?: continue
+                        if (canonicalExactName(item.optString("artistName")) != target) continue
+                        val artistId = item.opt("artistId")?.toString()?.takeIf { it.isNotBlank() } ?: "name:$target"
+                        val pair = groups.getOrPut(artistId) { linkedSetOf<String>() to linkedSetOf() }
+                        item.optString("trackName").trim().takeIf { it.isNotBlank() }?.let(pair.first::add)
+                        item.optString("collectionName").trim().takeIf { it.isNotBlank() }?.let(pair.second::add)
+                    }
+                }
+            }
+            if (groups.isNotEmpty()) break
+        }
+        return groups.map { (id, pair) ->
+            ExternalCatalogGroup(id, pair.first.toList(), pair.second.toList())
+        }
+    }
+
+    /** Candidate-ID-specific Spotify catalog. */
+    private fun spotifyCatalogForCandidate(candidate: JSONObject, token: String): SpotifyCatalog {
         val artistId = candidate.optString("id").trim()
         val artistName = candidate.optString("name").trim()
-        if (artistId.isBlank() || artistName.isBlank()) return emptyList()
-        val names = linkedSetOf<String>()
+        if (artistId.isBlank() || artistName.isBlank()) return SpotifyCatalog(emptyList(), emptyList())
+        val tracks = linkedSetOf<String>()
+        val albums = linkedSetOf<String>()
         val tq = URLEncoder.encode("artist:\"$artistName\"", Charsets.UTF_8.name())
 
-        for (offset in listOf(0, 10)) {
+        // Search can find recent/popular tracks quickly; filter by candidate Spotify artist ID.
+        for (offset in listOf(0, 10, 20)) {
             val json = runCatching {
                 getJson("https://api.spotify.com/v1/search?q=$tq&type=track&limit=10&offset=$offset", token)
             }.getOrNull() ?: break
             val items = json.optJSONObject("tracks")?.optJSONArray("items") ?: break
             for (i in 0 until items.length()) {
                 val track = items.optJSONObject(i) ?: continue
-                if (trackHasArtistId(track, artistId)) {
-                    track.optString("name").trim().takeIf { it.isNotBlank() }?.let(names::add)
-                }
+                if (!trackHasArtistId(track, artistId)) continue
+                track.optString("name").trim().takeIf { it.isNotBlank() }?.let(tracks::add)
+                track.optJSONObject("album")?.optString("name")?.trim()?.takeIf { it.isNotBlank() }?.let(albums::add)
             }
-            if (items.length() < 10 || names.size >= 12) break
+            if (items.length() < 10 || tracks.size >= 20) break
         }
 
-        if (names.size < 4) {
-            val albums = runCatching {
-                getJson("https://api.spotify.com/v1/artists/$artistId/albums?include_groups=album,single&limit=5", token)
-            }.getOrNull()?.optJSONArray("items")
-            if (albums != null) {
-                val albumIds = linkedSetOf<String>()
-                for (i in 0 until albums.length()) {
-                    albums.optJSONObject(i)?.optString("id")?.trim()?.takeIf { it.isNotBlank() }?.let(albumIds::add)
-                }
-                for (albumId in albumIds.take(3)) {
-                    val tracks = runCatching {
-                        getJson("https://api.spotify.com/v1/albums/$albumId/tracks?limit=50", token)
-                    }.getOrNull()?.optJSONArray("items") ?: continue
-                    for (i in 0 until tracks.length()) {
-                        val track = tracks.optJSONObject(i) ?: continue
-                        if (trackHasArtistId(track, artistId)) {
-                            track.optString("name").trim().takeIf { it.isNotBlank() }?.let(names::add)
-                        }
-                    }
-                    if (names.size >= 12) break
+        // Artist Albums is ID-specific, so it is the reliable catalog backbone for same-name cases.
+        val albumJson = runCatching {
+            getJson("https://api.spotify.com/v1/artists/$artistId/albums?include_groups=album,single&limit=10", token)
+        }.getOrNull()
+        val albumItems = albumJson?.optJSONArray("items")
+        val albumIds = linkedSetOf<String>()
+        if (albumItems != null) {
+            for (i in 0 until albumItems.length()) {
+                val album = albumItems.optJSONObject(i) ?: continue
+                album.optString("name").trim().takeIf { it.isNotBlank() }?.let(albums::add)
+                album.optString("id").trim().takeIf { it.isNotBlank() }?.let(albumIds::add)
+            }
+        }
+
+        // Read a few album tracklists even if Search already found tracks. Album-track lookup by ID
+        // is much less sensitive to Search ranking and is important for underground artists.
+        for (albumId in albumIds.take(5)) {
+            val items = runCatching {
+                getJson("https://api.spotify.com/v1/albums/$albumId/tracks?limit=50", token)
+            }.getOrNull()?.optJSONArray("items") ?: continue
+            for (i in 0 until items.length()) {
+                val track = items.optJSONObject(i) ?: continue
+                if (trackHasArtistId(track, artistId)) {
+                    track.optString("name").trim().takeIf { it.isNotBlank() }?.let(tracks::add)
                 }
             }
         }
-        return names.toList()
+        return SpotifyCatalog(tracks.toList(), albums.toList())
     }
 
     private fun trackHasArtistId(track: JSONObject, artistId: String): Boolean {
@@ -312,25 +411,35 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
         return false
     }
 
-    private fun matchingTrackNames(lastFmTracks: List<String>, spotifyTracks: List<String>): List<String> {
-        if (lastFmTracks.isEmpty() || spotifyTracks.isEmpty()) return emptyList()
-        val remote = spotifyTracks.map(::canonicalTrackName).filter(::isUsefulTrackFingerprint).toSet()
-        return lastFmTracks.map(::canonicalTrackName)
-            .filter(::isUsefulTrackFingerprint)
-            .filter { it in remote }
-            .distinct()
+    private fun matchingNames(
+        left: List<String>,
+        right: List<String>,
+        canon: (String) -> String
+    ): List<String> {
+        if (left.isEmpty() || right.isEmpty()) return emptyList()
+        val remote = right.map(canon).filter(::isUsefulFingerprint).toSet()
+        return left.map(canon).filter(::isUsefulFingerprint).filter { it in remote }.distinct()
     }
 
     private fun canonicalTrackName(value: String): String {
         var s = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC).lowercase()
-        // Edition suffixes should not stop a real match, but preserve meaningful title words.
+        // Strip track-number prefixes ("06-UNCHAINED", "09 BWV1041") before comparison.
+        s = s.replace(Regex("^\\s*\\d{1,2}[\\s._#:-]+"), "")
         s = s.replace(Regex("[\\(\\[][^\\)\\]]*(remaster(?:ed)?|live|version|edit|mix|demo|acoustic|instrumental)[^\\)\\]]*[\\)\\]]"), " ")
         s = s.replace("&", " and ")
         s = s.replace(Regex("[^\\p{L}\\p{N}]+"), " ")
         return s.trim().replace(Regex("\\s+"), " ")
     }
 
-    private fun isUsefulTrackFingerprint(value: String): Boolean {
+    private fun canonicalAlbumName(value: String): String {
+        var s = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC).lowercase()
+        s = s.replace(Regex("[\\(\\[][^\\)\\]]*(remaster(?:ed)?|deluxe|expanded|edition|version)[^\\)\\]]*[\\)\\]]"), " ")
+        s = s.replace("&", " and ")
+        s = s.replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        return s.trim().replace(Regex("\\s+"), " ")
+    }
+
+    private fun isUsefulFingerprint(value: String): Boolean {
         if (value.length < 4) return false
         val generic = setOf(
             "intro", "outro", "interlude", "overture", "reprise", "instrumental",
@@ -351,10 +460,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
         }
     }
 
-    /**
-     * Conservative genre evidence. Generic "metal" alone is not enough to identify a person/band.
-     * 0 = no evidence, 1 = weak generic evidence, 2+ = usable identity evidence.
-     */
+    /** Spotify genre is deprecated and is only tertiary evidence now. */
     private fun genreEvidenceScore(localGenres: List<String>, spotifyGenres: List<String>): Int {
         if (localGenres.isEmpty() || spotifyGenres.isEmpty()) return 0
         fun norm(v: String) = v.lowercase().replace('ü', 'u').trim()
@@ -377,6 +483,19 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     private fun resolveSpotifyFromMusicBrainz(mbid: String): SpotifyArtistDestination? {
         val parsed = musicBrainz.spotifyArtistRelation(mbid) ?: return null
         return SpotifyArtistDestination(parsed.first, true, parsed.second, "MusicBrainz MBIDで本人確認")
+    }
+
+    private fun getPublicJson(url: String, userAgent: String): JSONObject {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.requestMethod = "GET"
+        c.connectTimeout = 12_000
+        c.readTimeout = 15_000
+        c.setRequestProperty("User-Agent", userAgent)
+        val code = c.responseCode
+        val stream = if (code in 200..299) c.inputStream else c.errorStream
+        val text = stream.bufferedReader().use { it.readText() }
+        if (code !in 200..299) error("Public catalog API error $code: $text")
+        return JSONObject(text)
     }
 
     private suspend fun authorize(clientId: String, onStatus: (String) -> Unit): String {
