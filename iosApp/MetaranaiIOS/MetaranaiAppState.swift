@@ -196,7 +196,7 @@ final class MetaranaiAppState: ObservableObject {
         history.first(where: { MetalArtist.normalizeName($0.artistName) == MetalArtist.normalizeName(artist.name) })?.reaction
     }
 
-    func filteredArchive(query: String, genre: String?, reaction: Reaction?, onlyUnrated: Bool, vocal: VocalType?, sort: ArchiveSort) -> [MetalArtist] {
+    func filteredArchive(query: String, genre: String?, filterReaction: Reaction?, onlyUnrated: Bool, vocal: VocalType?, sort: ArchiveSort) -> [MetalArtist] {
         var result = artists
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty { result = result.filter { $0.name.localizedCaseInsensitiveContains(q) || $0.country.localizedCaseInsensitiveContains(q) } }
