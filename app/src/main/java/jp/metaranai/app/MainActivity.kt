@@ -1,6 +1,9 @@
 package jp.metaranai.app
 
 import android.os.Bundle
+import android.app.Activity
+import android.content.Intent
+import androidx.lifecycle.ViewModelProvider
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -34,10 +37,24 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent { MetaranaiApp() }
     }
+
+    @Deprecated("Facebook SDK still delivers its login result through onActivityResult")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        val handled = ViewModelProvider(this)[MainViewModel::class.java]
+            .handleFacebookActivityResult(requestCode, resultCode, data)
+        if (!handled) super.onActivityResult(requestCode, resultCode, data)
+    }
 }
 
 @Composable
 fun MetaranaiApp(vm: MainViewModel = viewModel()) {
+    val onboardingComplete by vm.onboardingComplete.collectAsState()
+    if (!onboardingComplete) {
+        MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
+            OnboardingScreen(vm)
+        }
+        return
+    }
     var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")
     val icons = listOf("⚡", "🔎", "📚", "🧬", "⚙")
@@ -76,7 +93,7 @@ private fun Header(subtitle: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("メタらない？", fontSize = 30.sp, fontWeight = FontWeight.Black, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("v0.6.4", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("v0.9.0 · ACCOUNT & PERSONALIZATION", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Text(subtitle, color = Muted, fontSize = 13.sp)
     }
@@ -97,6 +114,7 @@ private fun HomeScreen(vm: MainViewModel) {
     val mediaStatus by vm.mediaOpenStatus.collectAsState()
     val activeGenres = GenreLensCatalog.activeGenres(lens)
     val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
+    var showAnalysis by remember(rec.artist.name) { mutableStateOf(false) }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("ジャンルは必須条件。DNAでその地下を選び抜く。") }
@@ -147,15 +165,21 @@ private fun HomeScreen(vm: MainViewModel) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         rec.matchedTraits.forEach { trait -> SuggestionChip(onClick = {}, label = { Text(trait, fontSize = 11.sp) }) }
                     }
-                    Spacer(Modifier.height(18.dp))
-                    ScoreBreakdown(rec.breakdown)
-                    Spacer(Modifier.height(12.dp))
-                    WhyThisArtist(vm.whyThisArtist(rec))
-                    if (rec.artist.source != ArtistSource.BUILTIN) {
-                        Spacer(Modifier.height(12.dp))
-                        ExternalMeta(rec.artist)
+                    Spacer(Modifier.height(14.dp))
+                    OutlinedButton(onClick = { showAnalysis = !showAnalysis }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (showAnalysis) "解析を閉じる" else "なぜこのArtist？ / スコアを見る")
                     }
-                    Spacer(Modifier.height(22.dp))
+                    if (showAnalysis) {
+                        Spacer(Modifier.height(10.dp))
+                        ScoreBreakdown(rec.breakdown)
+                        Spacer(Modifier.height(10.dp))
+                        WhyThisArtist(vm.whyThisArtist(rec))
+                        if (rec.artist.source != ArtistSource.BUILTIN) {
+                            Spacer(Modifier.height(10.dp))
+                            ExternalMeta(rec.artist)
+                        }
+                    }
+                    Spacer(Modifier.height(18.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { vm.openSpotifyArtist(rec.artist) }, modifier = Modifier.weight(1f)) { Text("Spotify") }
                         OutlinedButton(onClick = { vm.openYouTube(rec.artist) }, modifier = Modifier.weight(1f)) { Text("YouTube") }
@@ -177,19 +201,29 @@ private fun HomeScreen(vm: MainViewModel) {
             }
             item {
                 Text("聴いた結果を5段階で教えろ", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
-                Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Reaction.entries.forEach { r ->
-                        OutlinedButton(onClick = { vm.react(r) }, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(r.label, fontWeight = FontWeight.Bold)
-                                Text(r.description, color = Muted, fontSize = 10.sp)
-                            }
+                ReactionSelector(onReaction = vm::react)
+                if (reactionStatus.isNotBlank()) {
+                    Text(reactionStatus, color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReactionSelector(onReaction: (Reaction) -> Unit) {
+    Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Reaction.entries.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                pair.forEach { r ->
+                    OutlinedButton(onClick = { onReaction(r) }, modifier = Modifier.weight(1f).heightIn(min = 58.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(r.label, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(r.description, color = Muted, fontSize = 8.sp, maxLines = 1)
                         }
                     }
-                    if (reactionStatus.isNotBlank()) {
-                        Text(reactionStatus, color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-                    }
                 }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -351,6 +385,7 @@ private fun SearchScreen(vm: MainViewModel) {
 private fun ArchiveScreen(vm: MainViewModel) {
     val external by vm.externalArtists.collectAsState()
     val history by vm.history.collectAsState()
+    val profile by vm.profile.collectAsState()
     val deepDiveResults by vm.deepDiveResults.collectAsState()
     val deepDiveStatus by vm.deepDiveStatus.collectAsState()
     val deepDiving by vm.deepDiving.collectAsState()
@@ -358,6 +393,7 @@ private fun ArchiveScreen(vm: MainViewModel) {
     var reactionFilter by remember { mutableStateOf("ALL") }
     var genreFilter by remember { mutableStateOf<String?>(null) }
     var vocalFilter by remember { mutableStateOf<VocalType?>(null) }
+    var sortMode by remember { mutableStateOf("DNA") }
 
     val archive = remember(external, history) { vm.archiveArtists() }
     val latestReaction = remember(history) {
@@ -376,6 +412,11 @@ private fun ArchiveScreen(vm: MainViewModel) {
         val genreOk = genreFilter == null || GenreLensCatalog.matches(artist, listOf(genreFilter!!))
         val vocalOk = vocalFilter == null || artist.vocalType == vocalFilter
         queryOk && reactionOk && genreOk && vocalOk
+    }
+    val visible = when (sortMode) {
+        "HIDDEN" -> filtered.sortedByDescending { it.hiddenScore }
+        "NAME" -> filtered.sortedBy { it.name.lowercase() }
+        else -> filtered.sortedByDescending { profile.similarity(it.vector) }
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -417,15 +458,21 @@ private fun ArchiveScreen(vm: MainViewModel) {
                     FilterChip(selected = vocalFilter == vocal, onClick = { vocalFilter = if (vocalFilter == vocal) null else vocal }, label = { Text(vocal.label, fontSize = 10.sp) })
                 }
             }
-            Text("表示 ${filtered.size}組 / 未評価 ${(archive.size - ratedCount).coerceAtLeast(0)}組", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("DNA" to "おすすめ順", "HIDDEN" to "HIDDEN", "NAME" to "名前順").forEach { (key, label) ->
+                    FilterChip(selected = sortMode == key, onClick = { sortMode = key }, label = { Text(label, fontSize = 10.sp) })
+                }
+            }
+            Text("表示 ${visible.size}組 / 未評価 ${(archive.size - ratedCount).coerceAtLeast(0)}組", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         }
         if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
             DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
         }
-        if (filtered.isEmpty()) item {
+        if (visible.isEmpty()) item {
             Text("条件に一致するArtistがいない。フィルターを緩めるか『探す』から地下を追加しよう。", color = Muted, modifier = Modifier.padding(20.dp))
         }
-        items(filtered, key = { it.name.lowercase() }) { artist ->
+        items(visible, key = { it.name.lowercase() }) { artist ->
             val record = latestReaction[artist.name.trim().lowercase()]
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
@@ -531,7 +578,8 @@ private fun SettingsScreen(vm: MainViewModel) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("PERSONAL METAL ARCHIVE / V0.6.4") }
+        item { Header("ACCOUNT & PERSONALIZATION — YOUR METAL, YOUR DATA") }
+        item { AccountSettingsCard(vm) }
         item {
             SettingsCard("GENRE LENS", "指定ジャンルを必須条件にし、そのジャンル内でDNAに合うArtistを選ぶ。候補不足時は先に地下を自動補充する。") {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -578,8 +626,11 @@ private fun SettingsScreen(vm: MainViewModel) {
             Spacer(Modifier.height(12.dp))
         }
         item {
-            SettingsCard("DATA SAFETY", "V0.4/V0.5のprofile/history等を維持。旧3段階評価も5段階へ安全移行する。") {
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.6.4.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+            SettingsCard("DATA SAFETY", "従来JSONバックアップ形式を維持。V0.4〜V0.6.xのJSONから復元するとSQLite Archiveを自動再構築する。") {
+                Text("SQLite Mirror: ${vm.archiveDatabaseCount()} external artists", color = Color.White, fontSize = 11.sp)
+                Text("Portable backup: metaranai-backup JSON", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.0.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
@@ -600,6 +651,116 @@ private fun GenreSelector(selected: Set<String>, onToggle: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         GenreLensCatalog.names().forEach { name -> FilterChip(selected = name in selected, onClick = { onToggle(name) }, label = { Text(name, fontSize = 10.sp) }) }
     }
+}
+
+
+@Composable
+private fun OnboardingScreen(vm: MainViewModel) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val account by vm.account.collectAsState()
+    val status by vm.accountStatus.collectAsState()
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var showEmail by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var createEmail by remember { mutableStateOf(true) }
+
+    LazyColumn(Modifier.fillMaxSize().background(Bg), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            Text("WELCOME TO", color = Muted, fontWeight = FontWeight.Bold)
+            Text("メタらない？", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
+            Text("YOUR METAL. YOUR DISCOVERY.", color = Acid, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("最初から誰かの好みに寄せません。ログインして記録を引き継ぐか、あなたのMetal DNAをここから作ります。", color = Muted)
+        }
+        item {
+            Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("ACCOUNT", color = Acid, fontWeight = FontWeight.Bold)
+                if (account == null) {
+                    Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.fillMaxWidth()) { Text("Googleで続ける") }
+                    OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.fillMaxWidth()) { Text("Appleで続ける") }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
+                        OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
+                    }
+                    TextButton(onClick = { showEmail = !showEmail }, modifier = Modifier.fillMaxWidth()) { Text("メールアドレスで続ける") }
+                    if (showEmail) {
+                        OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(password, { password = it }, label = { Text("Password (6文字以上)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Switch(createEmail, { createEmail = it }); Text(if (createEmail) "新規作成" else "ログイン", color = Color.White)
+                        }
+                        Button(onClick = { vm.signInEmail(email, password, createEmail) }, modifier = Modifier.fillMaxWidth()) { Text(if (createEmail) "アカウント作成" else "ログイン") }
+                    }
+                    OutlinedButton(onClick = vm::signInGuest, modifier = Modifier.fillMaxWidth()) { Text("アカウントなしで試す") }
+                    if (!vm.cloudConfigured) Text("※ Google / Apple / Facebook / X / EmailはFirebase設定後に有効。ゲストはオフラインでも利用可能。", color = Muted, fontSize = 10.sp)
+                } else {
+                    Text("${account!!.displayName.ifBlank { account!!.email.ifBlank { "Guest" } }} で開始", color = Color.White)
+                }
+                if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp)
+            }
+        }
+        item {
+            Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp)) {
+                Text("BUILD YOUR METAL DNA", color = Acid, fontWeight = FontWeight.Bold)
+                Text("好きなGenreを選択（複数可）。選んだGenreの平均から初期DNAを作り、以後の評価であなた専用に学習します。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
+                Button(onClick = vm::startWithSpotifyOnboarding, modifier = Modifier.fillMaxWidth()) { Text("🎧 Spotifyの視聴傾向から始める") }
+                Text("またはGenreから初期DNAを作成", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+                GenreSelector(selected) { g -> selected = if (g in selected) selected - g else selected + g }
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { vm.completeOnboardingWithGenres(selected) }, enabled = selected.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("このGenreから始める") }
+                Text("初回DNAは Spotify または Genre 選択で作成します。アカウントはゲストでも利用できます。", color = Muted, fontSize = 12.sp)
+                Text("Spotify Client IDは公開ビルドではBuild Secretから設定可能。未設定時はGenre/探索で開始できます。", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountSettingsCard(vm: MainViewModel) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val account by vm.account.collectAsState()
+    val status by vm.accountStatus.collectAsState()
+    val pending by vm.legacyMigrationPending.collectAsState()
+    val conflict by vm.cloudConflictPending.collectAsState()
+    var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }
+    SettingsCard("ACCOUNT & CLOUD SYNC", "Google / Apple / Facebook / X / Emailで記録をアカウントに紐付け。別端末では同じアカウントから復元。JSON Backupは非常用として維持。") {
+        if (account == null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.weight(1f)) { Text("Google") }
+                OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.weight(1f)) { Text("Apple") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
+                OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
+            }
+            OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { vm.signInEmail(email, password, true) }, modifier = Modifier.fillMaxWidth()) { Text("Emailで新規作成") }
+            TextButton(onClick = { vm.signInEmail(email, password, false) }, modifier = Modifier.fillMaxWidth()) { Text("既存Emailでログイン") }
+        } else {
+            Text("SIGNED IN  ${account!!.provider}", color = Acid, fontWeight = FontWeight.Bold)
+            Text(account!!.email.ifBlank { account!!.displayName.ifBlank { account!!.uid } }, color = Color.White, fontSize = 11.sp)
+            if (conflict) {
+                Spacer(Modifier.height(8.dp))
+                Text("⚠ 端末とクラウドの両方に記録があります。自動上書きしません。", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Button(onClick = vm::resolveCloudConflictUseCloud, modifier = Modifier.fillMaxWidth()) { Text("クラウド記録をこの端末へ復元") }
+                OutlinedButton(onClick = vm::resolveCloudConflictUseLocal, modifier = Modifier.fillMaxWidth()) { Text("この端末の記録でクラウドを更新") }
+            } else if (pending) {
+                Spacer(Modifier.height(8.dp))
+                Text("この端末にV0.8以前の記録があります。クラウドへ引き継ぐまで端末データは変更しません。", color = Color.White, fontSize = 11.sp)
+                Button(onClick = vm::migrateLocalDataToAccount, modifier = Modifier.fillMaxWidth()) { Text("この端末の記録をアカウントへ引き継ぐ") }
+            }
+            Button(onClick = vm::syncAccountNow, modifier = Modifier.fillMaxWidth()) { Text("今すぐクラウド同期") }
+            OutlinedButton(onClick = vm::signOutAccount, modifier = Modifier.fillMaxWidth()) { Text("ログアウト") }
+            TextButton(onClick = vm::deleteAccount, modifier = Modifier.fillMaxWidth()) { Text("アカウントを削除") }
+        }
+        if (!vm.cloudConfigured) Text("Firebase未設定：docs/17_ACCOUNT_AND_FIREBASE_SETUP.md を参照。ゲスト/既存Localデータはそのまま利用できます。", color = Muted, fontSize = 10.sp)
+        if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+    Spacer(Modifier.height(12.dp))
 }
 
 private fun formatCompact(n: Long): String = when {

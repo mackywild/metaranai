@@ -1,40 +1,36 @@
-# メタらない？ v0.6.4
+# メタらない？ v0.9.0 — ACCOUNT & PERSONALIZATION
 
-V0.6.4 strengthens Spotify identity resolution after a real regression with `Yutaro Abe's ASTRAL WIND`. It keeps the strict no-partial-match rule and now verifies underground artists using multiple independent catalogs (Last.fm + Apple/iTunes) plus Spotify Artist-ID-specific albums/tracks.
+誰がインストールしても、その人自身のMETAL DNAから始まるためのアカウント/初期登録アップデート。
 
-自分のMETAL DNAを学習し、地下まで掘って「今日の1組」を推薦しながら、聴くほどPersonal Metal Archiveを育てるAndroidアプリ。
+## V0.9.0 Highlights
+- 新規ユーザーの初期MetalVectorを8軸すべて0.50のニュートラルへ変更。旧ユーザーの保存済みprofileは変更しない。
+- 初回OnboardingでSpotify視聴傾向またはGenreを選択して初期METAL DNAを生成。Genre初期値は旧built-in catalogではなくGenre Lens定義から作る。
+- Firebase Authentication基盤：Google / Apple / Facebook / X(Twitter) / Email / Anonymous Guest。
+- Firebase StorageへユーザーUID単位でportable JSONを保存し、別端末から復元。
+- V0.8以前の既存端末データは、cloudが空のとき明示確認後のみアカウントへupload。勝手に上書きしない。
+- 従来 `metaranai-backup` JSONはversion 90で継続し、旧versionを拒否しない。
+- Account Delete / Sign Out / Manual Cloud Syncを追加。
+- iOS Coreの初期DNAもニュートラル化し、backup version 90へ更新。
+- `Yutaro Abe's ASTRAL WIND` Spotify Identity回帰試験は継続。
 
-## V0.6.4 — MULTI-CATALOG SPOTIFY IDENTITY
-
-- Spotify Artist検索は2026年仕様に合わせ `limit=10` でページング
-- Artist名の部分一致は引き続き直行禁止
-- MusicBrainz MBID -> Spotify relationを最優先
-- Spotify検索は通常の名前検索 + `artist:` field検索の二経路で完全一致候補を収集
-- 完全一致候補はLast.fmに加えApple/iTunes公開Catalogでも独立照合
-- Apple側はartistIdごとに曲/Albumを取得し、同名Artistを混ぜない
-- Spotify側もArtist ID単位でAlbums / Album Tracksを取得
-- 2曲以上、2Album以上、または曲+Album一致なら強い本人証拠として直行
-- 同名Artistが複数いる場合は、独立Catalog Fingerprintで一意な勝者が出た時だけ直行
-- Spotify Genreはdeprecatedのため主判定には使わない
-- 新しい本人確認済みcache `spotify_artist_links_v064` を使用
-- v0.6.3以前のSpotifyリンクcacheは保存するが自動利用しない
-
-## V0.6.0 — PERSONAL METAL ARCHIVE
-
-V0.5系で育ててきたLocal Metal DBを、推薦の裏側だけでなくユーザー自身が探索できる資産へ昇格。
-
-- **METAL ARCHIVE**: Built-in + External Artistを重複排除して図鑑表示、評価/Genre/Vo等で絞り込み
-- **WHY THIS ARTIST?**: Genre Lens・一致DNA・高評価Artistとの近さ・Vocal DNA・HIDDEN・発掘ルートを説明
-- **DEEP DIVE**: 任意ArtistからLast.fm Similar Artistsを掘り、未評価 + DNA + HIDDENで再順位付け
-- **LISTEN ROUTES**: Spotify / YouTube Artist / MV / Live
-- **APP ICON**: Metalピック / ホーン / サウンドウェーブをモチーフにした専用アイコン
-- Strict Genre Lens / 未評価自動補充 / 5段階評価 / 無制限Local Metal DBを継続
+## Firebase
+Social/Email cloud accountを有効にするには `docs/17_ACCOUNT_AND_FIREBASE_SETUP.md` の設定が必要。Firebase未設定でもGuest + Local + JSON Backupは利用可能。
 
 ## Compatibility
+- Android applicationId: `jp.metaranai.app`
+- Android SharedPreferences: `metaranai`
+- Android versionCode: 17
+- Android versionName: 0.9.0
+- iOS Bundle ID: `jp.metaranai.ios`
+- iOS Version: 0.9.0
+- iOS Build: 17
+- Portable backup: `format = metaranai-backup`, version 90
 
-- applicationId: `jp.metaranai.app`
-- SharedPreferences: `metaranai`
-- versionCode: 14
-- versionName: 0.6.4
-- V0.4〜V0.6.3の既存データを維持
-- 固定署名を設定済みなら同じ署名鍵で上書き更新可能
+## Regression
+```bash
+python tools/check_update_compat.py
+python tools/check_v064_spotify_identity.py
+python tools/check_v070_backup_compat.py
+python tools/check_v080_ios_beta.py
+python tools/check_v090_account_personalization.py
+```

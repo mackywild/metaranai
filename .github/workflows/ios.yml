@@ -1,0 +1,65 @@
+name: iOS Beta Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  swift-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile portable Swift core
+        run: |
+          swiftc -swift-version 5 \
+            iosApp/MetaranaiIOS/Core/CoreModels.swift \
+            iosApp/MetaranaiIOS/Core/PortableBackup.swift \
+            iosApp/MetaranaiIOS/Core/MetalDataParser.swift \
+            iosApp/MetaranaiIOS/Core/GenreLensCore.swift \
+            iosApp/MetaranaiIOS/Core/RecommendationCore.swift \
+            iosApp/MetaranaiIOS/Core/SeedCatalog.swift \
+            iosApp/MetaranaiIOS/Core/CatalogFingerprint.swift \
+            iosApp/MetaranaiIOS/Services/LastFMService.swift \
+            iosApp/MetaranaiIOS/Services/SpotifyIdentityResolver.swift \
+            iosApp/CoreTests/main.swift \
+            -o /tmp/metaranai-v090-core-tests
+      - name: Run old JSON compatibility and recommendation tests
+        run: /tmp/metaranai-v090-core-tests tests/fixtures/metaranai-backup-v064-sample.json
+      - name: Run project regression checks
+        run: |
+          python tools/check_update_compat.py
+          python tools/check_v052_genre_lens.py
+          python tools/check_v053_genre_lens.py
+          python tools/check_v054_unrated_refill.py
+          python tools/check_v060_personal_archive.py
+          python tools/check_v061_spotify_identity.py
+          python tools/check_v062_spotify_identity.py
+          python tools/check_v063_spotify_track_fingerprint.py
+          python tools/check_v064_spotify_identity.py
+          python tools/check_v070_backup_compat.py
+          python tools/check_v070_reforge.py
+          python tools/check_v080_ios_beta.py
+          python tools/check_v090_account_personalization.py
+
+  ios-simulator:
+    runs-on: macos-15
+    needs: swift-core
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: iosApp
+        run: xcodegen generate
+      - name: Build iOS Simulator app
+        working-directory: iosApp
+        run: |
+          xcodebuild \
+            -project MetaranaiIOS.xcodeproj \
+            -scheme MetaranaiIOS \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

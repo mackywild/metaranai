@@ -7,8 +7,9 @@ import org.json.JSONObject
 class LocalStore(context: Context) {
     // Keep the same file and legacy keys. V0.4/V0.5 data must survive an in-place update.
     private val prefs = context.getSharedPreferences("metaranai", Context.MODE_PRIVATE)
+    private val archiveDb = MetalArchiveDatabase(context.applicationContext)
 
-    val defaultProfile = MetalVector(.93f,.80f,.55f,.84f,.57f,.12f,.94f,.92f)
+    val defaultProfile = MetalVector(.50f,.50f,.50f,.50f,.50f,.50f,.50f,.50f) // V0.9: brand-new users start neutral; legacy saved profiles are preserved.
 
     fun loadProfile(): MetalVector {
         val raw = prefs.getString("profile", null) ?: return defaultProfile
@@ -88,7 +89,7 @@ class LocalStore(context: Context) {
         prefs.edit().putString("search_history", a.toString()).apply()
     }
 
-    fun clientId(): String = prefs.getString("spotify_client_id", "") ?: ""
+    fun clientId(): String = (prefs.getString("spotify_client_id", "") ?: "").ifBlank { BuildConfig.SPOTIFY_CLIENT_ID }
     fun saveClientId(value: String) = prefs.edit().putString("spotify_client_id", value.trim()).apply()
     fun token(): String = prefs.getString("spotify_access_token", "") ?: ""
     fun saveToken(value: String) = prefs.edit().putString("spotify_access_token", value).apply()
@@ -99,69 +100,90 @@ class LocalStore(context: Context) {
     fun saveSpotifySummary(value: String) = prefs.edit().putString("spotify_summary", value).apply()
     fun spotifySummary(): String = prefs.getString("spotify_summary", "未同期") ?: "未同期"
 
-    fun lastFmApiKey(): String = prefs.getString("lastfm_api_key", "") ?: ""
+    fun lastFmApiKey(): String = (prefs.getString("lastfm_api_key", "") ?: "").ifBlank { BuildConfig.LASTFM_API_KEY }
     fun saveLastFmApiKey(value: String) = prefs.edit().putString("lastfm_api_key", value.trim()).apply()
     fun saveDiscoverySummary(value: String) = prefs.edit().putString("discovery_summary", value).apply()
     fun discoverySummary(): String = prefs.getString("discovery_summary", "未同期") ?: "未同期"
 
     fun loadExternalArtists(): List<MetalArtist> {
-        val raw = prefs.getString("external_artists", "[]") ?: "[]"
-        return runCatching {
-            val a = JSONArray(raw)
-            (0 until a.length()).mapNotNull { i ->
-                val o = a.optJSONObject(i) ?: return@mapNotNull null
-                val v = o.optJSONObject("vector") ?: return@mapNotNull null
-                MetalArtist(
-                    name = o.getString("name"),
-                    country = o.optString("country", "External"),
-                    genres = buildList { val g=o.optJSONArray("genres"); if(g!=null) for(x in 0 until g.length()) add(g.optString(x)) },
-                    vector = MetalVector(
-                        v.optDouble("melody",.5).toFloat(), v.optDouble("speed",.5).toFloat(),
-                        v.optDouble("heavy",.5).toFloat(), v.optDouble("symphonic",.5).toFloat(),
-                        v.optDouble("technical",.5).toFloat(), v.optDouble("growl",.5).toFloat(),
-                        v.optDouble("cleanVocal",.5).toFloat(), v.optDouble("catchy",.5).toFloat()
-                    ),
-                    discovery = o.optDouble("discovery", .8).toFloat(),
-                    reason = o.optString("reason"),
-                    source = runCatching { ArtistSource.valueOf(o.optString("source", "LASTFM")) }.getOrDefault(ArtistSource.LASTFM),
-                    sourceSeed = o.optString("sourceSeed").takeIf { it.isNotBlank() },
-                    externalScore = if (o.has("externalScore")) o.optInt("externalScore") else null,
-                    lastFmListeners = if (o.has("lastFmListeners")) o.optLong("lastFmListeners") else null,
-                    lastFmPlaycount = if (o.has("lastFmPlaycount")) o.optLong("lastFmPlaycount") else null,
-                    mbid = o.optString("mbid").takeIf { it.isNotBlank() },
-                    area = o.optString("area").takeIf { it.isNotBlank() },
-                    beginDate = o.optString("beginDate").takeIf { it.isNotBlank() },
-                    endDate = o.optString("endDate").takeIf { it.isNotBlank() },
-                    ended = if (o.has("ended")) o.optBoolean("ended") else null,
-                    hiddenScore = o.optInt("hiddenScore", 50),
-                    metadataConfidence = o.optInt("metadataConfidence", 0),
-                    vocalType = runCatching { VocalType.valueOf(o.optString("vocalType", "UNKNOWN")) }.getOrDefault(VocalType.UNKNOWN)
-                )
-            }
-        }.getOrDefault(emptyList())
+        // V0.7.0: SharedPreferences JSON stays authoritative for portable backups.
+        // SQLite is an indexed mirror. On first V0.7 launch, rebuild it from legacy JSON.
+        val legacy = parseExternalArtists(prefs.getString("external_artists", "[]") ?: "[]")
+        archiveDb.bootstrapIfEmpty(legacy.map(::archiveRow))
+        val fromDb = archiveDb.payloads().mapNotNull { raw -> parseArtistObject(runCatching { JSONObject(raw) }.getOrNull()) }
+        return if (fromDb.isNotEmpty()) fromDb else legacy
     }
 
-    fun saveExternalArtists(artists: List<MetalArtist>) {
-        val a = JSONArray()
-        // V0.5.3: no artificial 500-artist ceiling. Every discovered/queried metal artist is retained.
-        artists.forEach { artist ->
-            a.put(JSONObject().apply {
-                put("name", artist.name); put("country", artist.country); put("discovery", artist.discovery); put("reason", artist.reason)
-                put("source", artist.source.name); put("sourceSeed", artist.sourceSeed ?: ""); artist.externalScore?.let { put("externalScore", it) }
-                artist.lastFmListeners?.let { put("lastFmListeners", it) }; artist.lastFmPlaycount?.let { put("lastFmPlaycount", it) }
-                put("mbid", artist.mbid ?: ""); put("area", artist.area ?: ""); put("beginDate", artist.beginDate ?: ""); put("endDate", artist.endDate ?: "")
-                artist.ended?.let { put("ended", it) }; put("hiddenScore", artist.hiddenScore); put("metadataConfidence", artist.metadataConfidence)
-                put("vocalType", artist.vocalType.name)
-                put("genres", JSONArray().apply { artist.genres.forEach { put(it) } })
-                put("vector", JSONObject().apply {
-                    put("melody",artist.vector.melody); put("speed",artist.vector.speed); put("heavy",artist.vector.heavy)
-                    put("symphonic",artist.vector.symphonic); put("technical",artist.vector.technical); put("growl",artist.vector.growl)
-                    put("cleanVocal",artist.vector.cleanVocal); put("catchy",artist.vector.catchy)
-                })
-            })
-        }
-        prefs.edit().putString("external_artists", a.toString()).apply()
+    private fun parseExternalArtists(raw: String): List<MetalArtist> = runCatching {
+        val a = JSONArray(raw)
+        (0 until a.length()).mapNotNull { i -> parseArtistObject(a.optJSONObject(i)) }
+    }.getOrDefault(emptyList())
+
+    private fun parseArtistObject(o: JSONObject?): MetalArtist? {
+        o ?: return null
+        val v = o.optJSONObject("vector") ?: return null
+        val name = o.optString("name").takeIf { it.isNotBlank() } ?: return null
+        return MetalArtist(
+            name = name,
+            country = o.optString("country", "External"),
+            genres = buildList { val g=o.optJSONArray("genres"); if(g!=null) for(x in 0 until g.length()) add(g.optString(x)) },
+            vector = MetalVector(
+                v.optDouble("melody",.5).toFloat(), v.optDouble("speed",.5).toFloat(),
+                v.optDouble("heavy",.5).toFloat(), v.optDouble("symphonic",.5).toFloat(),
+                v.optDouble("technical",.5).toFloat(), v.optDouble("growl",.5).toFloat(),
+                v.optDouble("cleanVocal",.5).toFloat(), v.optDouble("catchy",.5).toFloat()
+            ),
+            discovery = o.optDouble("discovery", .8).toFloat(),
+            reason = o.optString("reason"),
+            source = runCatching { ArtistSource.valueOf(o.optString("source", "LASTFM")) }.getOrDefault(ArtistSource.LASTFM),
+            sourceSeed = o.optString("sourceSeed").takeIf { it.isNotBlank() },
+            externalScore = if (o.has("externalScore")) o.optInt("externalScore") else null,
+            lastFmListeners = if (o.has("lastFmListeners")) o.optLong("lastFmListeners") else null,
+            lastFmPlaycount = if (o.has("lastFmPlaycount")) o.optLong("lastFmPlaycount") else null,
+            mbid = o.optString("mbid").takeIf { it.isNotBlank() },
+            area = o.optString("area").takeIf { it.isNotBlank() },
+            beginDate = o.optString("beginDate").takeIf { it.isNotBlank() },
+            endDate = o.optString("endDate").takeIf { it.isNotBlank() },
+            ended = if (o.has("ended")) o.optBoolean("ended") else null,
+            hiddenScore = o.optInt("hiddenScore", 50),
+            metadataConfidence = o.optInt("metadataConfidence", 0),
+            vocalType = runCatching { VocalType.valueOf(o.optString("vocalType", "UNKNOWN")) }.getOrDefault(VocalType.UNKNOWN)
+        )
     }
+
+    private fun artistObject(artist: MetalArtist): JSONObject = JSONObject().apply {
+        put("name", artist.name); put("country", artist.country); put("discovery", artist.discovery); put("reason", artist.reason)
+        put("source", artist.source.name); put("sourceSeed", artist.sourceSeed ?: ""); artist.externalScore?.let { put("externalScore", it) }
+        artist.lastFmListeners?.let { put("lastFmListeners", it) }; artist.lastFmPlaycount?.let { put("lastFmPlaycount", it) }
+        put("mbid", artist.mbid ?: ""); put("area", artist.area ?: ""); put("beginDate", artist.beginDate ?: ""); put("endDate", artist.endDate ?: "")
+        artist.ended?.let { put("ended", it) }; put("hiddenScore", artist.hiddenScore); put("metadataConfidence", artist.metadataConfidence)
+        put("vocalType", artist.vocalType.name)
+        put("genres", JSONArray().apply { artist.genres.forEach { put(it) } })
+        put("vector", JSONObject().apply {
+            put("melody",artist.vector.melody); put("speed",artist.vector.speed); put("heavy",artist.vector.heavy)
+            put("symphonic",artist.vector.symphonic); put("technical",artist.vector.technical); put("growl",artist.vector.growl)
+            put("cleanVocal",artist.vector.cleanVocal); put("catchy",artist.vector.catchy)
+        })
+    }
+
+    private fun archiveRow(artist: MetalArtist): MetalArchiveDatabase.Row = MetalArchiveDatabase.Row(
+        key = MetalArchiveDatabase.artistKey(artist.name, artist.mbid),
+        name = artist.name,
+        country = artist.country,
+        genresText = artist.genres.joinToString(" | "),
+        payloadJson = artistObject(artist).toString()
+    )
+
+    fun saveExternalArtists(artists: List<MetalArtist>) {
+        // Portable backup compatibility is intentionally retained: always mirror the DB back to the legacy JSON key.
+        val a = JSONArray()
+        artists.forEach { a.put(artistObject(it)) }
+        prefs.edit().putString("external_artists", a.toString()).apply()
+        archiveDb.replaceAll(artists.map(::archiveRow))
+    }
+
+    fun archiveDatabaseCount(): Int = archiveDb.count()
+
 
     // ----- V0.5+ additive keys. Legacy keys above are never renamed/cleared. -----
 
@@ -399,10 +421,39 @@ class LocalStore(context: Context) {
         prefs.edit().putString("spotify_artist_links_v064", root.toString()).apply()
     }
 
+    // ----- V0.9.0 account / onboarding. Additive keys only; legacy data is never cleared automatically. -----
+    fun hasPersonalData(): Boolean = prefs.contains("profile") || loadHistory().isNotEmpty() ||
+        (prefs.getString("external_artists", "[]") ?: "[]") != "[]" || loadSearchHistory().isNotEmpty()
+    fun onboardingCompleted(): Boolean = prefs.getBoolean("onboarding_v090_complete", false)
+    fun markOnboardingCompleted() = prefs.edit().putBoolean("onboarding_v090_complete", true).apply()
+    fun legacyAccountMigrationPending(): Boolean = prefs.getBoolean("account_v090_legacy_pending", false)
+    fun setLegacyAccountMigrationPending(value: Boolean) = prefs.edit().putBoolean("account_v090_legacy_pending", value).apply()
+    fun localAccountSession(): AccountSession? {
+        val uid = prefs.getString("account_v090_local_uid", "") ?: ""
+        if (uid.isBlank()) return null
+        return AccountSession(uid, prefs.getString("account_v090_name", "Guest") ?: "Guest", "", "guest", true)
+    }
+    fun createLocalGuest(): AccountSession {
+        val existing = localAccountSession(); if (existing != null) return existing
+        val s = AccountSession("local-" + java.util.UUID.randomUUID(), "Guest", "", "guest", true)
+        prefs.edit().putString("account_v090_local_uid", s.uid).putString("account_v090_name", s.displayName).apply()
+        return s
+    }
+    fun clearLocalAccountSession() = prefs.edit().remove("account_v090_local_uid").remove("account_v090_name").apply()
+
+    fun exportCloudBackupJson(): String {
+        val root = JSONObject(exportBackupJson())
+        val p = root.getJSONObject("preferences")
+        // Account cloud sync carries recommendation/history state, not reusable login credentials.
+        listOf("spotify_access_token", "spotify_refresh_token", "spotify_token_expiry",
+            "account_v090_local_uid", "account_v090_name").forEach { p.remove(it) }
+        return root.toString(2)
+    }
+
     fun exportBackupJson(): String {
         val out = JSONObject()
         out.put("format", "metaranai-backup")
-        out.put("version", 64)
+        out.put("version", 90)
         out.put("preferences", JSONObject().apply {
             prefs.all.forEach { (key, value) ->
                 when (value) {
@@ -417,6 +468,7 @@ class LocalStore(context: Context) {
     fun importBackupJson(raw: String): Result<Unit> = runCatching {
         val root = JSONObject(raw)
         require(root.optString("format") == "metaranai-backup") { "メタらない？のバックアップではありません" }
+        // Deliberately do NOT require a specific version. V0.5-V0.6.x JSON backups remain valid.
         val o = root.getJSONObject("preferences")
         val e = prefs.edit()
         o.keys().forEach { key ->
@@ -429,6 +481,11 @@ class LocalStore(context: Context) {
                 is JSONArray -> e.putStringSet(key, (0 until value.length()).map { value.optString(it) }.toSet())
             }
         }
-        e.apply()
+        check(e.commit()) { "バックアップの保存に失敗しました" }
+
+        // V0.7.0 database migration: rebuild the SQLite mirror from the restored legacy JSON.
+        // This is why an old metaranai-backup JSON remains sufficient to recover the archive.
+        val restoredArtists = parseExternalArtists(prefs.getString("external_artists", "[]") ?: "[]")
+        archiveDb.replaceAll(restoredArtists.map(::archiveRow))
     }
 }

@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.9.0 — ACCOUNT & PERSONALIZATION
+- Brand-new user profile seed changed from melody-heavy values to neutral 0.50 x 8 axes. Existing saved profiles are preserved.
+- First-run onboarding added: account choice + Spotify or multi-Genre initial METAL DNA. The old melody-heavy catalog is not used to create a new user profile.
+- Firebase Auth gateway added for Google, Apple, Facebook, X/Twitter, Email/Password, and Anonymous Guest.
+- Cloud backup uses Firebase Storage per UID (`users/{uid}/metaranai-backup.json`) so the growing Local Metal DB is not limited by a single Firestore document.
+- Existing V0.8-and-earlier local records require explicit migration when an authenticated account has no cloud backup.
+- Cloud restore imports the same portable JSON and rebuilds the SQLite Archive.
+- Manual cloud sync, sign-out and account-delete controls added.
+- Existing portable JSON format remains compatible; export version raised to 90.
+- iOS neutral seed / backup version / marketing version raised to V0.9.0 foundation.
+- Added account/Firebase setup manual and V0.9.0 release test matrix.
+
+## 0.8.0 — CROSS PLATFORM BETA
+- SwiftUIでiOS版5タブ（今日 / 探す / 図鑑 / DNA / 設定）を実装。
+- Android RecommendationEngine / METAL DNA / Strict Genre Lens / 5段階評価をSwiftへ移植。
+- Android built-in catalog 35組をiOS SeedCatalogへ移植。
+- Last.fm世界検索、Genre Lens未評価候補補充、Deep DiveをiOSへ実装。
+- Spotify Authorization Code + PKCEをiOSへ実装し、tokenをKeychainへ保存。
+- Spotify本人確認はAndroid v0.6.4 verified cacheを再利用し、新規候補は完全一致 + Last.fm/Apple曲・Album指紋で保守的に確認。
+- Android V0.5〜V0.7のmetaranai-backup JSONをiOSで復元し、iOSからAndroid互換JSONを書き出せるようにした。
+- 旧 MAYBE/MISS 評価migrationをiOSでも維持。
+- Info.plist URL Scheme `metaranai-login://spotify/callback`、AppIcon、PrivacyInfo.xcprivacyを追加。
+- XcodeGen project、Simulator build script、Device Archive scriptを追加。
+- GitHub ActionsへSwift core test + macOS iOS Simulator buildを追加。
+- TestFlight / iOS Spotify / Privacy手順書を追加。
+- Android versionCode 16 / versionName 0.8.0へ更新。
+
+## 0.7.0 — PROJECT REFORGE
+- TODAY画面の情報階層を整理し、WHY THIS ARTIST / SCORE BREAKDOWNを折りたたみ化。
+- 5段階評価UIを2列化し、主要操作までのスクロール量を削減。
+- METAL ARCHIVEへDNAおすすめ順 / HIDDEN / 名前順ソートを追加。
+- Android `SQLiteOpenHelper` ベースの `metaranai_archive.db` を追加。
+- 既存 `external_artists` JSONを初回起動時にSQLiteへmirrorし、以後もJSON + DBを同期。
+- 従来 `metaranai-backup` JSON formatを継続し、V0.4〜V0.6.x backupをversion固定で拒否しない。
+- 旧JSON復元後にSQLite Archiveを `external_artists` から全再構築する。
+- Android Adaptive Icon / Android 13+ monochrome themed iconを追加。
+- iOS用AppIcon asset setとSwiftUI移植starterを追加。
+- iOS側にも従来JSON envelopeを読めるLegacyBackupImporter sampleを追加。
+- `docs/`へSpotify / Last.fm / MusicBrainz / Android署名 / Apple Developer / Google Play / App Store / TestFlight / Privacy / Backupのマニュアルを追加。
+- iOS正式版はまだ未リリース。V0.8.0 TestFlightを次段階とする。
+
 ## 0.6.4
 - `Yutaro Abe's ASTRAL WIND` 実ケースでSpotify Identity Resolverを再試験し、v0.6.3の不足を修正。
 - Spotify Artist SearchをUIに近い通常名前検索 + artist field検索の二経路に変更。
