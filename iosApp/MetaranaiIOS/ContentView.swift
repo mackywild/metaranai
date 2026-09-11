@@ -325,7 +325,7 @@ private struct ArchiveView: View {
                             } label: { FilterChipLabel(label: vocal?.label ?? "Vo", active: vocal != nil) }
                         }.padding(.horizontal, 16)
                     }
-                    let rows = state.filteredArchive(query: query, genre: genre, reaction: reaction, onlyUnrated: onlyUnrated, vocal: vocal, sort: sort)
+                    let rows = state.filteredArchive(query: query, genre: genre, filterReaction: reaction, onlyUnrated: onlyUnrated, vocal: vocal, sort: sort)
                     List(rows) { artist in
                         NavigationLink { ArtistDetailView(artist: artist) } label: { ArtistRow(artist: artist) }
                             .listRowBackground(MetalTheme.card)
