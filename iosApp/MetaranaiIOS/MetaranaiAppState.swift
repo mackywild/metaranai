@@ -203,7 +203,7 @@ final class MetaranaiAppState: ObservableObject {
         if let genre { result = result.filter { GenreLensCore.matches($0, names: [genre]) } }
         if let vocal { result = result.filter { $0.vocalType == vocal } }
         if onlyUnrated { result = result.filter { self.reaction(for: $0) == nil }}
-        if let reaction { result = result.filter { self.reaction(for: $0) == reaction } }
+        if let filterReaction { result = result.filter { self.reaction(for: $0) == filterReaction } }
         switch sort {
         case .recommended: result.sort { profile.similarity(to: $0.vector) > profile.similarity(to: $1.vector) }
         case .hidden: result.sort { $0.hiddenScore > $1.hiddenScore }
