@@ -50,6 +50,7 @@ jobs:
           python tools/check_v090_account_personalization.py
           python tools/check_v091_gradle_resvalues.py
           python tools/check_v091_distribution_ui.py
+          python tools/check_v0911_auto_dna.py
 
       - name: Restore stable signing key
         if: env.HAS_SIGNING_KEY == 'true'
@@ -100,6 +101,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.1-apk
+          name: metaranai-v0.9.1.1-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error

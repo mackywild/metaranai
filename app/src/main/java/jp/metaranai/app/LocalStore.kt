@@ -31,6 +31,13 @@ class LocalStore(context: Context) {
         }.toString()).apply()
     }
 
+    // V0.9.1.1: DNA is system-owned. The generated display name is refreshed only
+    // after a small batch of learned profile changes so the label does not thrash.
+    fun generatedDnaName(): String = prefs.getString("dna_generated_name_v0911", "") ?: ""
+    fun saveGeneratedDnaName(value: String) = prefs.edit().putString("dna_generated_name_v0911", value).apply()
+    fun dnaLearningChangeCount(): Int = prefs.getInt("dna_learning_change_count_v0911", 0)
+    fun saveDnaLearningChangeCount(value: Int) = prefs.edit().putInt("dna_learning_change_count_v0911", value.coerceAtLeast(0)).apply()
+
     fun loadHistory(): List<DiscoveryRecord> {
         val raw = prefs.getString("history", "[]") ?: "[]"
         return runCatching {

@@ -1,3 +1,13 @@
+# Changelog
+
+## V0.9.1.1 — AUTO DNA CORRECTION
+- V0.9.1で追加したDNA手動スライダー／「この数値でDNAを生成」／ランダムDNAを廃止。
+- DNAの8軸数値とDNA名はユーザー編集不可とし、評価・探索・Spotify解析による学習結果だけで更新。
+- DNA名は学習による数値変動5回ごとに自動再生成し、頻繁な名称揺れを抑制。
+- DNA画面は編集UIから読み取り専用の進捗表示へ変更し、次回自動生成までの残り変動回数を表示。
+- Android / iOS双方で生成済みDNA名と変動カウンタを永続化。バックアップ復元時も互換性を維持。
+- Android versionCode 19 / versionName 0.9.1.1。iOSはApp Store互換のためMarketing Version 0.9.1のままBuild 19。
+
 
 ## V0.9.1 配布向けUI調整
 - 日本語中心の配布向けUIへ整理
@@ -6,7 +16,6 @@
 - Vo絞り込みUIを廃止し内部データのみ維持
 - 数値スライダー式Metal DNA生成を追加
 
-# Changelog
 
 ## 0.9.0 — ACCOUNT & PERSONALIZATION
 - Brand-new user profile seed changed from melody-heavy values to neutral 0.50 x 8 axes. Existing saved profiles are preserved.

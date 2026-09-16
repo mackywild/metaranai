@@ -37,7 +37,7 @@ enum PortableBackupCodec {
         "spotify_access_token", "spotify_refresh_token", "spotify_token_expiry", "spotify_summary",
         "discovery_summary", "spotify_artist_links_v05", "spotify_artist_links_v061",
         "spotify_artist_links_v062", "spotify_artist_links_v063", "spotify_artist_links_v064",
-        "spotify_artist_links_v080"
+        "spotify_artist_links_v080", "dna_generated_name_v0911", "dna_learning_change_count_v0911"
     ]
 
     static func decode(data: Data) throws -> LegacyBackupPayload {

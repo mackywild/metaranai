@@ -16,7 +16,10 @@ final class MetaranaiAppState: ObservableObject {
     @Published var lastFmAPIKey = ""
     @Published var searchResults: [MetalArtist] = []
     @Published var deepDiveResults: [MetalArtist] = []
+    @Published private(set) var generatedDNAName = ""
+    @Published private(set) var dnaLearningChangeCount = 0
 
+    private let dnaRegenerationIntervalValue = 5
     let spotifyAuth = SpotifyAuthManager()
     private let defaults: UserDefaults
     private let lastFM = LastFMService()
@@ -29,7 +32,9 @@ final class MetaranaiAppState: ObservableObject {
     }
 
     var activeGenres: [String] { GenreLensCore.activeGenres(genreLens) }
-    var dnaType: String { RecommendationCore.dnaType(profile: profile, vocal: vocalProfile, history: history) }
+    var dnaType: String { generatedDNAName.isEmpty ? RecommendationCore.dnaType(profile: profile, vocal: vocalProfile, history: history) : generatedDNAName }
+    var dnaRegenerationInterval: Int { dnaRegenerationIntervalValue }
+    var dnaRegenerationRemaining: Int { max(1, dnaRegenerationIntervalValue - dnaLearningChangeCount) }
     var ratedArtistNames: Set<String> { Set(history.map { MetalArtist.normalizeName($0.artistName) }) }
     var unratedArtists: [MetalArtist] { artists.filter { !ratedArtistNames.contains(MetalArtist.normalizeName($0.name)) } }
     var positiveRate: Int {
@@ -54,6 +59,9 @@ final class MetaranaiAppState: ObservableObject {
         artists = Array(combined.values)
         genreLens = MetalDataParser.genreLens(from: defaults.string(forKey: "genre_lens_v05"))
         vocalProfile = MetalDataParser.vocalProfile(from: defaults.string(forKey: "vocal_profile_v05"))
+        generatedDNAName = defaults.string(forKey: "dna_generated_name_v0911") ?? ""
+        dnaLearningChangeCount = min(max(defaults.integer(forKey: "dna_learning_change_count_v0911"), 0), dnaRegenerationIntervalValue - 1)
+        if generatedDNAName.isEmpty { regenerateDNAName(resetCounter: false) }
         clientID = defaults.string(forKey: "spotify_client_id") ?? ""
         lastFmAPIKey = defaults.string(forKey: "lastfm_api_key") ?? ""
         recomputeRecommendation()
@@ -73,19 +81,34 @@ final class MetaranaiAppState: ObservableObject {
             recomputeRecommendation(seed: Int.random(in: 1...999_999))
             return
         }
+        let before = profile
         if reaction != .notFound { profile = RecommendationCore.updatedProfile(current: profile, artist: artist, reaction: reaction) }
         history.insert(DiscoveryRecord(artistName: artist.name, date: today, reaction: reaction, score: recommendation?.compatibility ?? 0), at: 0)
+        if reaction != .notFound { registerDNALearningChange(before: before, after: profile) }
         defaults.set(MetalDataParser.profileJSON(profile), forKey: "profile")
         defaults.set(MetalDataParser.historyJSON(history), forKey: "history")
         statusMessage = "\(reaction.label) を記録しました"
         recomputeRecommendation(seed: Int.random(in: 1...999_999))
     }
 
-    func saveManualDNA(_ vector: MetalVector) {
-        profile = vector
-        defaults.set(MetalDataParser.profileJSON(profile), forKey: "profile")
-        statusMessage = "DNAを更新しました"
-        recomputeRecommendation()
+    private func registerDNALearningChange(before: MetalVector, after: MetalVector) {
+        guard before != after else { return }
+        let next = dnaLearningChangeCount + 1
+        if next >= dnaRegenerationIntervalValue {
+            regenerateDNAName()
+        } else {
+            dnaLearningChangeCount = next
+            defaults.set(next, forKey: "dna_learning_change_count_v0911")
+        }
+    }
+
+    private func regenerateDNAName(resetCounter: Bool = true) {
+        generatedDNAName = RecommendationCore.dnaType(profile: profile, vocal: vocalProfile, history: history)
+        defaults.set(generatedDNAName, forKey: "dna_generated_name_v0911")
+        if resetCounter {
+            dnaLearningChangeCount = 0
+            defaults.set(0, forKey: "dna_learning_change_count_v0911")
+        }
     }
 
     func setLensMode(_ mode: GenreLensMode) {

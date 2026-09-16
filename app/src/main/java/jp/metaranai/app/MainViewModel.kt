@@ -19,6 +19,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // V0.7.0: Reforge UI + SQLite archive mirror while keeping legacy JSON backup compatibility.
     private val minimumUnratedLensPoolPerGenre = 10
     private val refillTargetUnratedLensPoolPerGenre = 20
+    private val dnaRegenerationInterval = 5
     private val engine = RecommendationEngine()
     private val spotify = SpotifyClient(app, store)
     private val externalDiscovery = ExternalDiscoveryClient(store)
@@ -45,6 +46,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val genreLens: StateFlow<GenreLensConfig> = _genreLens
     private val _history = MutableStateFlow(store.loadHistory())
     val history: StateFlow<List<DiscoveryRecord>> = _history
+    private val _dnaName = MutableStateFlow(store.generatedDnaName())
+    val dnaName: StateFlow<String> = _dnaName
+    private val _dnaLearningChangeCount = MutableStateFlow(store.dnaLearningChangeCount().coerceIn(0, dnaRegenerationInterval - 1))
+    val dnaLearningChangeCount: StateFlow<Int> = _dnaLearningChangeCount
     private val _searchHistory = MutableStateFlow(store.loadSearchHistory())
     val searchHistory: StateFlow<List<SearchRecord>> = _searchHistory
     private val _externalArtists = MutableStateFlow(store.loadExternalArtists())
@@ -102,6 +107,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var cloudSyncJob: Job? = null
 
     init {
+        if (_onboardingComplete.value && _dnaName.value.isBlank()) {
+            regenerateDnaName(resetCounter = false)
+        }
         if (store.hasPersonalData() && !store.onboardingCompleted()) {
             store.markOnboardingCompleted()
             store.setLegacyAccountMigrationPending(true)
@@ -137,8 +145,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val record = DiscoveryRecord(rec.artist.name, today, reaction, rec.compatibility)
         _history.value = listOf(record) + _history.value
         if (reaction != Reaction.NOT_FOUND) {
-            _profile.value = engine.updatedProfile(_profile.value, rec.artist, reaction)
+            val before = _profile.value
+            _profile.value = engine.updatedProfile(before, rec.artist, reaction)
             _vocalProfile.value = VocalAnalyzer.update(_vocalProfile.value, rec.artist.vocalType, reaction)
+            registerDnaLearningChange(before, _profile.value)
         }
         showReactionStatus("${reaction.label} を記録しました")
         persistAndRefresh()
@@ -190,7 +200,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun recordSearch(query: String, artist: MetalArtist) {
         val r = SearchRecord(query.trim(), artist.name, LocalDateTime.now().withNano(0).toString())
         _searchHistory.value = listOf(r) + _searchHistory.value.filterNot { it.artistName == artist.name }
-        _profile.value = engine.profileFromInterest(_profile.value, artist)
+        val before = _profile.value
+        _profile.value = engine.profileFromInterest(before, artist)
+        registerDnaLearningChange(before, _profile.value)
         store.saveSearchHistory(_searchHistory.value)
         store.saveProfile(_profile.value)
         _recommendation.value = recommendNow()
@@ -303,13 +315,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun lastFmApiKey() = store.lastFmApiKey()
     fun saveLastFmApiKey(value: String) = store.saveLastFmApiKey(value)
     fun externalCount() = _externalArtists.value.size
-    fun dnaType() = engine.dnaType(_profile.value, _vocalProfile.value, _history.value)
-    fun saveManualDna(vector: MetalVector) {
-        _profile.value = vector.clamped()
-        store.saveProfile(_profile.value)
-        _recommendation.value = recommendNow()
-        scheduleCloudSync()
-    }
+    fun dnaType(): String = _dnaName.value.ifBlank { engine.dnaType(_profile.value, _vocalProfile.value, _history.value) }
+    fun dnaRegenerationRemaining(): Int = (dnaRegenerationInterval - _dnaLearningChangeCount.value).coerceAtLeast(1)
+    fun dnaRegenerationInterval(): Int = dnaRegenerationInterval
     fun activeGenres(): List<String> = GenreLensCatalog.activeGenres(_genreLens.value)
 
     /** V0.6.0 Personal Metal Archive. Built-ins and discovered artists share one deduplicated view. */
@@ -454,10 +462,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = spotify.loginAndSync { _spotifyStatus.value = it }
             result.onSuccess { synced ->
-                synced.inferredProfile?.let {
-                    _profile.value = _profile.value.blend(it, .22f)
+                synced.inferredProfile?.let { inferred ->
+                    val before = _profile.value
+                    _profile.value = before.blend(inferred, .22f)
                     store.saveProfile(_profile.value)
+                    registerDnaLearningChange(before, _profile.value, forceRegenerate = _dnaName.value.isBlank())
                 }
+                if (_dnaName.value.isBlank()) regenerateDnaName()
                 _spotifySignals.value = buildList {
                     if (synced.matchedArtists.isNotEmpty()) add("一致: ${synced.matchedArtists.take(5).joinToString(" / ")}")
                     if (synced.genreSignals.isNotEmpty()) add("Genre: ${synced.genreSignals.take(5).joinToString(" / ")}")
@@ -577,24 +588,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             GenreLensCatalog.vectorFor(genres)?.let { initial ->
                 _profile.value = initial
                 store.saveProfile(initial)
+                regenerateDnaName()
             }
             _genreLens.value = GenreLensConfig(GenreLensMode.MANUAL, genres, emptyMap())
             store.saveGenreLens(_genreLens.value)
         }
-        store.markOnboardingCompleted(); _onboardingComplete.value = true; _recommendation.value = recommendNow()
+        store.markOnboardingCompleted(); _onboardingComplete.value = true
+        if (_dnaName.value.isBlank()) regenerateDnaName()
+        _recommendation.value = recommendNow()
         _account.value?.let { syncAccountNow() }
     }
 
     fun startWithSpotifyOnboarding() {
         store.markOnboardingCompleted(); _onboardingComplete.value = true
         if (store.clientId().isBlank()) {
+            if (_dnaName.value.isBlank()) regenerateDnaName()
             _spotifyStatus.value = "Spotify Client ID未設定。Genreまたは探索から開始してください"
             return
         }
         syncSpotify()
     }
 
-    fun skipOnboarding() { store.markOnboardingCompleted(); _onboardingComplete.value = true; _recommendation.value = recommendNow() }
+    fun skipOnboarding() {
+        store.markOnboardingCompleted(); _onboardingComplete.value = true
+        if (_dnaName.value.isBlank()) regenerateDnaName()
+        _recommendation.value = recommendNow()
+    }
 
     fun exportBackupJson(): String = store.exportBackupJson()
 
@@ -616,6 +635,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _vocalProfile.value = store.loadVocalProfile()
         _genreLens.value = store.loadGenreLens()
         _history.value = store.loadHistory()
+        _dnaName.value = store.generatedDnaName()
+        _dnaLearningChangeCount.value = store.dnaLearningChangeCount().coerceIn(0, dnaRegenerationInterval - 1)
+        if (_dnaName.value.isBlank()) regenerateDnaName(resetCounter = false)
         _searchHistory.value = store.loadSearchHistory()
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
@@ -803,6 +825,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
             candidates = strict, genreLens = genres, seed = seed
         )
+    }
+
+    private fun registerDnaLearningChange(before: MetalVector, after: MetalVector, forceRegenerate: Boolean = false) {
+        if (before == after) return
+        if (forceRegenerate) {
+            regenerateDnaName()
+            return
+        }
+        val next = _dnaLearningChangeCount.value + 1
+        if (next >= dnaRegenerationInterval) {
+            regenerateDnaName()
+        } else {
+            _dnaLearningChangeCount.value = next
+            store.saveDnaLearningChangeCount(next)
+        }
+    }
+
+    private fun regenerateDnaName(resetCounter: Boolean = true) {
+        val generated = engine.dnaType(_profile.value, _vocalProfile.value, _history.value)
+        _dnaName.value = generated
+        store.saveGeneratedDnaName(generated)
+        if (resetCounter) {
+            _dnaLearningChangeCount.value = 0
+            store.saveDnaLearningChangeCount(0)
+        }
     }
 
     private fun scheduleCloudSync() {

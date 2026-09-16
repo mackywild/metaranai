@@ -41,6 +41,8 @@ jobs:
           python tools/check_v070_reforge.py
           python tools/check_v080_ios_beta.py
           python tools/check_v090_account_personalization.py
+          python tools/check_v091_distribution_ui.py
+          python tools/check_v0911_auto_dna.py
 
   ios-simulator:
     runs-on: macos-15

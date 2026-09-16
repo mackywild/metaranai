@@ -495,26 +495,19 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun DnaScreen(vm: MainViewModel) {
     val p by vm.profile.collectAsState()
-    var melody by remember(p) { mutableFloatStateOf(p.melody) }
-    var speed by remember(p) { mutableFloatStateOf(p.speed) }
-    var heavy by remember(p) { mutableFloatStateOf(p.heavy) }
-    var symphonic by remember(p) { mutableFloatStateOf(p.symphonic) }
-    var technical by remember(p) { mutableFloatStateOf(p.technical) }
-    var growl by remember(p) { mutableFloatStateOf(p.growl) }
-    var cleanVocal by remember(p) { mutableFloatStateOf(p.cleanVocal) }
-    var catchy by remember(p) { mutableFloatStateOf(p.catchy) }
-
-    val editing = MetalVector(melody, speed, heavy, symphonic, technical, growl, cleanVocal, catchy)
+    val learningChanges by vm.dnaLearningChangeCount.collectAsState()
     val topGenres = vm.topGenres()
-    val sliders = listOf(
-        "メロディ重視" to Pair(melody, { v: Float -> melody = v }),
-        "疾走感" to Pair(speed, { v: Float -> speed = v }),
-        "重厚さ" to Pair(heavy, { v: Float -> heavy = v }),
-        "シンフォニック" to Pair(symphonic, { v: Float -> symphonic = v }),
-        "技巧性" to Pair(technical, { v: Float -> technical = v }),
-        "グロウル" to Pair(growl, { v: Float -> growl = v }),
-        "クリーンボーカル" to Pair(cleanVocal, { v: Float -> cleanVocal = v }),
-        "キャッチーさ" to Pair(catchy, { v: Float -> catchy = v })
+    val interval = vm.dnaRegenerationInterval()
+    val remaining = (interval - learningChanges).coerceAtLeast(1)
+    val metrics = listOf(
+        "メロディ重視" to p.melody,
+        "疾走感" to p.speed,
+        "重厚さ" to p.heavy,
+        "シンフォニック" to p.symphonic,
+        "技巧性" to p.technical,
+        "グロウル" to p.growl,
+        "クリーンボーカル" to p.cleanVocal,
+        "キャッチーさ" to p.catchy
     )
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -523,31 +516,25 @@ private fun DnaScreen(vm: MainViewModel) {
             Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp)) {
                 Text("あなたのメタルDNA", color = Acid, fontWeight = FontWeight.Bold)
                 Text(vm.dnaType(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 5.dp))
-                Text("8項目を0〜100で調整して、自分だけのDNAを作れます。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+                Text("DNA名と数値は、評価・探索・Spotify解析から自動学習します。手動編集はできません。", color = Muted, fontSize = 11.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 6.dp))
+                Text("DNA名の次回自動生成まで あと${remaining}回の学習変動", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                LinearProgressIndicator(
+                    progress = { learningChanges.toFloat() / interval.toFloat() },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
             }
             Spacer(Modifier.height(10.dp))
         }
-        items(sliders) { (label, item) ->
-            val value = item.first
-            val setter = item.second
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 5.dp)) {
+        items(metrics) { (label, value) ->
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 7.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(label, color = Color.White, fontWeight = FontWeight.Bold)
                     Text("${(value * 100).toInt()}", color = Acid, fontWeight = FontWeight.Bold)
                 }
-                Slider(value = value, onValueChange = setter, valueRange = 0f..1f, steps = 19)
-            }
-        }
-        item {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Button(onClick = { vm.saveManualDna(editing) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("この数値でDNAを生成")
-                }
-                OutlinedButton(onClick = {
-                    melody = kotlin.random.Random.nextFloat(); speed = kotlin.random.Random.nextFloat(); heavy = kotlin.random.Random.nextFloat()
-                    symphonic = kotlin.random.Random.nextFloat(); technical = kotlin.random.Random.nextFloat(); growl = kotlin.random.Random.nextFloat()
-                    cleanVocal = kotlin.random.Random.nextFloat(); catchy = kotlin.random.Random.nextFloat()
-                }, modifier = Modifier.fillMaxWidth()) { Text("🎲 ランダムDNAで遊ぶ") }
+                LinearProgressIndicator(
+                    progress = { value },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                )
             }
         }
         if (topGenres.isNotEmpty()) item {
@@ -631,7 +618,7 @@ private fun SettingsScreen(vm: MainViewModel) {
                 Text("図鑑DB: ${vm.archiveDatabaseCount()}組", color = Color.White, fontSize = 11.sp)
                 Text("互換バックアップ: metaranai-backup JSON", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                 Spacer(Modifier.height(10.dp))
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.1.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.1.1.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

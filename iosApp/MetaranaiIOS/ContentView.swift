@@ -366,14 +366,6 @@ private struct DeepDiveView: View {
 
 private struct DNAView: View {
     @EnvironmentObject private var state: MetaranaiAppState
-    @State private var melody = 0.5
-    @State private var speed = 0.5
-    @State private var heavy = 0.5
-    @State private var symphonic = 0.5
-    @State private var technical = 0.5
-    @State private var growl = 0.5
-    @State private var cleanVocal = 0.5
-    @State private var catchy = 0.5
 
     var body: some View {
         NavigationStack {
@@ -383,38 +375,27 @@ private struct DNAView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         BrandHeader()
                         Text(state.dnaType).font(.title2.bold()).foregroundStyle(.white)
-                        Text("8項目を0〜100で調整して、自分だけのDNAを作れます。")
+                        Text("DNA名と数値は、評価などの学習結果から自動更新されます。手動編集はできません。")
                             .font(.caption).foregroundStyle(MetalTheme.muted)
-                        dnaSlider("メロディ重視", $melody)
-                        dnaSlider("疾走感", $speed)
-                        dnaSlider("重厚さ", $heavy)
-                        dnaSlider("シンフォニック", $symphonic)
-                        dnaSlider("技巧性", $technical)
-                        dnaSlider("グロウル", $growl)
-                        dnaSlider("クリーンボーカル", $cleanVocal)
-                        dnaSlider("キャッチーさ", $catchy)
-                        Button("この数値でDNAを生成") {
-                            state.saveManualDNA(.init(melody: melody, speed: speed, heavy: heavy, symphonic: symphonic, technical: technical, growl: growl, cleanVocal: cleanVocal, catchy: catchy))
-                        }.buttonStyle(.borderedProminent).tint(MetalTheme.accent).frame(maxWidth: .infinity)
-                        Button("🎲 ランダムDNAで遊ぶ") {
-                            melody = .random(in: 0...1); speed = .random(in: 0...1); heavy = .random(in: 0...1); symphonic = .random(in: 0...1)
-                            technical = .random(in: 0...1); growl = .random(in: 0...1); cleanVocal = .random(in: 0...1); catchy = .random(in: 0...1)
-                        }.buttonStyle(.bordered).frame(maxWidth: .infinity)
+                        Text("DNA名の次回自動生成まで あと\(state.dnaRegenerationRemaining)回の学習変動")
+                            .font(.caption.bold()).foregroundStyle(MetalTheme.acid)
+                        ProgressView(
+                            value: Double(state.dnaLearningChangeCount),
+                            total: Double(state.dnaRegenerationInterval)
+                        ).tint(MetalTheme.accent)
+
+                        DNAProgress(label: "メロディ重視", value: state.profile.melody)
+                        DNAProgress(label: "疾走感", value: state.profile.speed)
+                        DNAProgress(label: "重厚さ", value: state.profile.heavy)
+                        DNAProgress(label: "シンフォニック", value: state.profile.symphonic)
+                        DNAProgress(label: "技巧性", value: state.profile.technical)
+                        DNAProgress(label: "グロウル", value: state.profile.growl)
+                        DNAProgress(label: "クリーンボーカル", value: state.profile.cleanVocal)
+                        DNAProgress(label: "キャッチーさ", value: state.profile.catchy)
                     }.padding(18)
                 }
             }
             .navigationTitle("メタルDNA")
-            .onAppear {
-                melody = state.profile.melody; speed = state.profile.speed; heavy = state.profile.heavy; symphonic = state.profile.symphonic
-                technical = state.profile.technical; growl = state.profile.growl; cleanVocal = state.profile.cleanVocal; catchy = state.profile.catchy
-            }
-        }
-    }
-
-    private func dnaSlider(_ label: String, _ value: Binding<Double>) -> some View {
-        VStack(spacing: 4) {
-            HStack { Text(label).font(.subheadline.bold()); Spacer(); Text("\(Int(value.wrappedValue * 100))").foregroundStyle(MetalTheme.acid) }
-            Slider(value: value, in: 0...1, step: 0.05).tint(MetalTheme.accent)
         }
     }
 }
