@@ -10,6 +10,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.METARANAI_KEYSTORE_B64 != '' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,8 +23,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # setup-android@v4 のデフォルトは
-      # "tools platform-tools" だが、旧 tools は現在取得できないため明示指定する
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -51,7 +52,7 @@ jobs:
           python tools/check_v091_distribution_ui.py
 
       - name: Restore stable signing key
-        if: ${{ secrets.METARANAI_KEYSTORE_B64 != '' }}
+        if: env.HAS_SIGNING_KEY == 'true'
         env:
           METARANAI_KEYSTORE_B64: ${{ secrets.METARANAI_KEYSTORE_B64 }}
         run: |
@@ -60,7 +61,7 @@ jobs:
             > "$GITHUB_WORKSPACE/metaranai-release.jks"
 
       - name: Build signed release APK
-        if: ${{ secrets.METARANAI_KEYSTORE_B64 != '' }}
+        if: env.HAS_SIGNING_KEY == 'true'
         env:
           METARANAI_KEYSTORE_PATH: ${{ github.workspace }}/metaranai-release.jks
           METARANAI_KEYSTORE_PASSWORD: ${{ secrets.METARANAI_KEYSTORE_PASSWORD }}
@@ -81,7 +82,7 @@ jobs:
         run: gradle :app:assembleRelease
 
       - name: Build debug APK fallback
-        if: ${{ secrets.METARANAI_KEYSTORE_B64 == '' }}
+        if: env.HAS_SIGNING_KEY != 'true'
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
