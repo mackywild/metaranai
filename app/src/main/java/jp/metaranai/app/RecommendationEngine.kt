@@ -87,6 +87,7 @@ class RecommendationEngine {
         Reaction.SOME -> current.blend(artist.vector, .07f)
         Reaction.MEH -> moveAway(current, artist.vector, .06f)
         Reaction.NO_INTEREST -> moveAway(current, artist.vector, .18f)
+        Reaction.NOT_FOUND -> current
     }
 
     fun profileFromInterest(current: MetalVector, artist: MetalArtist): MetalVector = current.blend(artist.vector, .025f)
@@ -111,10 +112,12 @@ class RecommendationEngine {
 
     private fun listeningQualifier(history: List<DiscoveryRecord>): String? {
         if (history.size < 8) return null
-        val total = history.size.toFloat()
-        val love = history.count { it.reaction == Reaction.LOVE_ALL } / total
-        val selective = history.count { it.reaction == Reaction.SOME } / total
-        val reject = history.count { it.reaction == Reaction.MEH || it.reaction == Reaction.NO_INTEREST } / total
+        val judged = history.filter { it.reaction != Reaction.NOT_FOUND }
+        if (judged.size < 8) return null
+        val total = judged.size.toFloat()
+        val love = judged.count { it.reaction == Reaction.LOVE_ALL } / total
+        val selective = judged.count { it.reaction == Reaction.SOME } / total
+        val reject = judged.count { it.reaction == Reaction.MEH || it.reaction == Reaction.NO_INTEREST } / total
         return when {
             love >= .25f -> "全曲没入型"
             selective >= .40f -> "選曲発掘型"

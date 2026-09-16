@@ -1,0 +1,15 @@
+{
+  "format": "metaranai-backup",
+  "version": 64,
+  "preferences": {
+    "profile": "{\"melody\":0.93,\"speed\":0.8,\"heavy\":0.55,\"symphonic\":0.84,\"technical\":0.57,\"growl\":0.12,\"cleanVocal\":0.94,\"catchy\":0.92}",
+    "history": "[{\"artist\":\"Legacy Power\",\"date\":\"2026-08-20\",\"reaction\":\"HIT\",\"score\":91},{\"artist\":\"Old Maybe\",\"date\":\"2026-08-21\",\"reaction\":\"MAYBE\",\"score\":73}]",
+    "search_history": "[{\"query\":\"power metal\",\"artist\":\"Legacy Power\",\"dateTime\":\"2026-08-20T20:00:00\"}]",
+    "external_artists": "[{\"name\":\"Legacy Power\",\"country\":\"Japan\",\"genres\":[\"Power Metal\"],\"vector\":{\"melody\":0.9,\"speed\":0.8,\"heavy\":0.5,\"symphonic\":0.6,\"technical\":0.5,\"growl\":0.1,\"cleanVocal\":0.95,\"catchy\":0.8},\"discovery\":0.9,\"reason\":\"legacy\",\"source\":\"LASTFM\",\"hiddenScore\":82,\"metadataConfidence\":70,\"vocalType\":\"MALE\"},{\"name\":\"Underground Thrash\",\"country\":\"Germany\",\"genres\":[\"Thrash Metal\"],\"vector\":{\"melody\":0.5,\"speed\":0.9,\"heavy\":0.8,\"symphonic\":0.1,\"technical\":0.6,\"growl\":0.35,\"cleanVocal\":0.6,\"catchy\":0.45},\"discovery\":0.95,\"reason\":\"legacy\",\"source\":\"LASTFM\",\"hiddenScore\":90,\"metadataConfidence\":65,\"vocalType\":\"MALE\"}]",
+    "genre_lens_v05": "{\"mode\":\"MANUAL\",\"manual\":[\"Thrash Metal\"],\"weekdays\":{}}",
+    "vocal_profile_v05": "{\"male\":0.4,\"female\":0.5,\"mixed\":0.1,\"observations\":20}",
+    "spotify_client_id": "fixture-client-id",
+    "lastfm_api_key": "fixture-lastfm-key",
+    "spotify_artist_links_v064": "{}"
+  }
+}

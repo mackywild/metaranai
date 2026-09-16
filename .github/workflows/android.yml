@@ -55,6 +55,8 @@ jobs:
           python tools/check_v070_reforge.py
           python tools/check_v080_ios_beta.py
           python tools/check_v090_account_personalization.py
+          python tools/check_v091_gradle_resvalues.py
+          python tools/check_v091_distribution_ui.py
 
       - name: Restore stable signing key
         if: ${{ env.METARANAI_KEYSTORE_B64 != '' }}
@@ -73,5 +75,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.0-apk
+          name: metaranai-v0.9.1-apk
           path: app/build/outputs/apk/**/*.apk

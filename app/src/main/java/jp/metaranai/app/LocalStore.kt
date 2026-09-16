@@ -59,6 +59,7 @@ class LocalStore(context: Context) {
         "SOME", "MAYBE" -> Reaction.SOME
         "MEH", "MISS" -> Reaction.MEH
         "NO_INTEREST" -> Reaction.NO_INTEREST
+        "NOT_FOUND" -> Reaction.NOT_FOUND
         else -> null
     }
 

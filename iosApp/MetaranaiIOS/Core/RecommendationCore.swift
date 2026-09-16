@@ -73,6 +73,7 @@ enum RecommendationCore {
         case .some: return current.blended(with: artist.vector, weight: 0.07)
         case .meh: return current.movedAway(from: artist.vector, weight: 0.06)
         case .noInterest: return current.movedAway(from: artist.vector, weight: 0.18)
+        case .notFound: return current
         }
     }
 

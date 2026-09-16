@@ -5,10 +5,10 @@ root = Path(__file__).resolve().parents[1]
 main = (root / "app/src/main/java/jp/metaranai/app/MainActivity.kt").read_text()
 viewmodel = (root / "app/src/main/java/jp/metaranai/app/MainViewModel.kt").read_text()
 gradle = (root / "app/build.gradle.kts").read_text()
-assert 'versionCode = 17' in gradle
-assert 'versionName = "0.9.0"' in gradle
-assert 'v0.9.0 · ACCOUNT & PERSONALIZATION' in main
-assert 'なぜこのArtist？ / スコアを見る' in main
+assert 'versionCode = 18' in gradle
+assert 'versionName = "0.9.1"' in gradle
+assert 'メタルバンド探索アプリケーション' in main
+assert 'なぜこのArtist？ / スコアを見る' not in main
 assert 'private fun ReactionSelector' in main
 assert 'sortMode' in main and 'おすすめ順' in main
 assert 'archiveDatabaseCount()' in viewmodel

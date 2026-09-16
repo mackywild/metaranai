@@ -60,6 +60,7 @@ enum Reaction: String, CaseIterable, Sendable {
     case some = "SOME"
     case meh = "MEH"
     case noInterest = "NO_INTEREST"
+    case notFound = "NOT_FOUND"
 
     var label: String {
         switch self {
@@ -68,6 +69,7 @@ enum Reaction: String, CaseIterable, Sendable {
         case .some: return "🎵 何曲か刺さる"
         case .meh: return "😐 イマイチ"
         case .noInterest: return "💀 興味なし"
+        case .notFound: return "🔍 見つからなかった"
         }
     }
 
@@ -78,6 +80,7 @@ enum Reaction: String, CaseIterable, Sendable {
         case .some: return 60
         case .meh: return 30
         case .noInterest: return 0
+        case .notFound: return 0
         }
     }
 
@@ -88,6 +91,7 @@ enum Reaction: String, CaseIterable, Sendable {
         case "SOME", "MAYBE": return .some
         case "MEH", "MISS": return .meh
         case "NO_INTEREST": return .noInterest
+        case "NOT_FOUND": return .notFound
         default: return nil
         }
     }

@@ -37,6 +37,30 @@ object GenreLensCatalog {
 
     fun names(): List<String> = lenses.map { it.name }
 
+    private val japaneseNames = mapOf(
+        "Melodic Metal" to "メロディックメタル",
+        "Power Metal" to "パワーメタル",
+        "Symphonic Metal" to "シンフォニックメタル",
+        "Gothic Metal" to "ゴシックメタル",
+        "Metalcore" to "メタルコア",
+        "Melodic Death Metal" to "メロディックデスメタル",
+        "Progressive Metal" to "プログレッシブメタル",
+        "Glam Metal" to "グラムメタル",
+        "Japanese Metal" to "ジャパニーズメタル",
+        "Nu Metal" to "ニューメタル",
+        "Folk Metal" to "フォークメタル",
+        "Doom Metal" to "ドゥームメタル",
+        "Thrash Metal" to "スラッシュメタル",
+        "Black Metal" to "ブラックメタル",
+        "Death Metal" to "デスメタル",
+        "Neoclassical Metal" to "ネオクラシカルメタル",
+        "Heavy Metal" to "ヘヴィメタル",
+        "Alternative Metal" to "オルタナティヴメタル"
+    )
+
+    fun displayName(name: String): String = japaneseNames[name] ?: name
+    fun displayNames(names: Collection<String>): String = names.joinToString(" / ") { displayName(it) }
+
     fun activeGenres(config: GenreLensConfig, date: LocalDate = LocalDate.now()): List<String> = when (config.mode) {
         GenreLensMode.OFF -> emptyList()
         GenreLensMode.MANUAL -> config.manualGenres.toList().sorted()

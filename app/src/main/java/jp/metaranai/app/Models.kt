@@ -30,6 +30,11 @@ data class MetalVector(
         )
     }
 
+    fun clamped(): MetalVector = MetalVector(
+        melody.coerceIn(0f,1f), speed.coerceIn(0f,1f), heavy.coerceIn(0f,1f), symphonic.coerceIn(0f,1f),
+        technical.coerceIn(0f,1f), growl.coerceIn(0f,1f), cleanVocal.coerceIn(0f,1f), catchy.coerceIn(0f,1f)
+    )
+
     fun traits(): List<Pair<String, Float>> = listOf(
         "メロディ" to melody, "疾走" to speed, "ヘヴィ" to heavy, "シンフォニック" to symphonic,
         "技巧" to technical, "グロウル" to growl, "クリーンVo" to cleanVocal, "キャッチー" to catchy
@@ -98,7 +103,8 @@ enum class Reaction(
     HIT("🔥 普通に刺さる", "明確に好み", 80, 1.00f),
     SOME("🎵 何曲か刺さる", "一部の曲が刺さる", 60, .45f),
     MEH("😐 イマイチ", "あまり合わない", 30, -.30f),
-    NO_INTEREST("💀 興味なし", "フルで聴く気にならない", 0, -1.00f);
+    NO_INTEREST("💀 興味なし", "フルで聴く気にならない", 0, -1.00f),
+    NOT_FOUND("🔍 見つからなかった", "配信先で見つからず評価できない", 0, 0.00f);
 
     val isPositive: Boolean get() = this == LOVE_ALL || this == HIT || this == SOME
     val isStrongPositive: Boolean get() = this == LOVE_ALL || this == HIT
@@ -114,7 +120,7 @@ data class DiscoveryRecord(
 data class SearchRecord(val query: String, val artistName: String, val dateTime: String)
 
 enum class GenreLensMode(val label: String) {
-    OFF("OFF"), WEEKDAY("曜日"), MANUAL("手動")
+    OFF("指定なし"), WEEKDAY("曜日"), MANUAL("手動")
 }
 
 data class GenreLensConfig(

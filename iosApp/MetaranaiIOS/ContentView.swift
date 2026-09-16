@@ -33,8 +33,9 @@ struct ContentView: View {
 
 private struct TodayView: View {
     @EnvironmentObject private var state: MetaranaiAppState
-    @State private var showWhy = false
     @State private var showDeepDive = false
+    @State private var spotifyURL: URL? = nil
+    @State private var spotifyChecked = false
 
     var body: some View {
         NavigationStack {
@@ -42,20 +43,15 @@ private struct TodayView: View {
                 MetalTheme.background.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        BrandHeader(subtitle: "v0.9.0 · ACCOUNT & PERSONALIZATION")
+                        BrandHeader()
                         if !state.statusMessage.isEmpty { StatusBanner(text: state.statusMessage, busy: state.isBusy) }
                         LensStrip()
                         if let rec = state.recommendation {
-                            RecommendationCard(rec: rec, showWhy: $showWhy)
+                            RecommendationCard(rec: rec)
                             ListenActions(artist: rec.artist)
                             RatingGrid(artist: rec.artist)
                         } else {
                             EmptyRecommendationCard()
-                        }
-                        if state.activeGenres.isEmpty == false {
-                            let count = state.unratedArtists.filter { GenreLensCore.matches($0, names: state.activeGenres) }.count
-                            Text("\(state.activeGenres.joined(separator: " / ")) · 未評価 \(count)組")
-                                .font(.caption).foregroundStyle(MetalTheme.muted)
                         }
                     }
                     .padding(18)
@@ -72,92 +68,48 @@ private struct TodayView: View {
 }
 
 private struct BrandHeader: View {
-    let subtitle: String
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image("AppIconPreview")
-                .resizable().scaledToFit().frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.08)))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("メタらない？").font(.title.bold()).foregroundStyle(.white)
-                Text(subtitle).font(.caption.bold()).foregroundStyle(MetalTheme.acid)
-            }
-            Spacer()
+        VStack(spacing: 3) {
+            Text("メタらない？").font(.title.bold()).foregroundStyle(.white)
+            Text("メタルバンド探索アプリケーション").font(.caption).foregroundStyle(MetalTheme.muted)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 
 private struct LensStrip: View {
     @EnvironmentObject private var state: MetaranaiAppState
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text("GENRE LENS").font(.caption.bold()).foregroundStyle(MetalTheme.muted)
-                Spacer()
-                if !state.activeGenres.isEmpty {
-                    Button("OFF") { state.setLensMode(.off) }
-                        .font(.caption.bold()).foregroundStyle(MetalTheme.accent)
-                }
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(GenreLensCore.names, id: \.self) { genre in
-                        let selected = state.genreLens.mode == .manual && state.genreLens.manualGenres.contains(genre)
-                        Button {
-                            state.toggleManualGenre(genre)
-                        } label: {
-                            Text(genre)
-                                .font(.caption.bold())
-                                .padding(.horizontal, 11).padding(.vertical, 8)
-                                .background(selected ? MetalTheme.accent : MetalTheme.raised)
-                                .foregroundStyle(selected ? .white : MetalTheme.muted)
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-            }
+        if !state.activeGenres.isEmpty {
+            Text("本日のジャンル: " + state.activeGenres.map(GenreLensCore.displayName).joined(separator: " / "))
+                .font(.caption.bold()).foregroundStyle(MetalTheme.acid)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12).background(MetalTheme.card).clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }
 }
 
 private struct RecommendationCard: View {
     let rec: Recommendation
-    @Binding var showWhy: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("TODAY'S METAL").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
+                Text("今日のメタル").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
                 Spacer()
-                Text("DNA \(rec.compatibility)%")
+                Text("DNA一致度 \(rec.compatibility)%")
                     .font(.headline.bold()).foregroundStyle(MetalTheme.acid)
             }
             Text(rec.artist.name).font(.title2.bold()).foregroundStyle(.white)
             Text([rec.artist.country, rec.artist.genres.prefix(3).joined(separator: " / ")].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.subheadline).foregroundStyle(MetalTheme.muted)
             HStack(spacing: 12) {
-                ScorePill(title: "HIDDEN", value: rec.artist.hiddenScore)
-                ScorePill(title: "TOTAL", value: rec.breakdown.total)
-                Text(rec.artist.vocalType.label).font(.caption.bold()).foregroundStyle(MetalTheme.muted)
+                ScorePill(title: "発掘度", value: rec.artist.hiddenScore)
+                ScorePill(title: "総合", value: rec.breakdown.total)
             }
-            DisclosureGroup(isExpanded: $showWhy) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(rec.reason).font(.subheadline).foregroundStyle(MetalTheme.muted)
-                    Text("Affinity \(rec.breakdown.affinity) · Lens \(rec.breakdown.genreLens) · Hidden \(rec.breakdown.hidden) · Novelty \(rec.breakdown.novelty)")
-                        .font(.caption.monospacedDigit()).foregroundStyle(MetalTheme.muted)
-                    Text("MATCH: \(rec.matchedTraits.joined(separator: " / "))")
-                        .font(.caption.bold()).foregroundStyle(MetalTheme.acid)
-                }.padding(.top, 8)
-            } label: {
-                Text("なぜこのArtist？ / SCORE BREAKDOWN").font(.subheadline.bold())
-            }
-            .tint(.white)
         }
         .padding(18)
-        .background(
-            LinearGradient(colors: [MetalTheme.card, Color(red: 0.15, green: 0.035, blue: 0.055)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        )
+        .background(LinearGradient(colors: [MetalTheme.card, Color(red: 0.15, green: 0.035, blue: 0.055)], startPoint: .topLeading, endPoint: .bottomTrailing))
         .clipShape(RoundedRectangle(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(MetalTheme.accent.opacity(0.35)))
     }
@@ -167,8 +119,8 @@ private struct EmptyRecommendationCard: View {
     @EnvironmentObject private var state: MetaranaiAppState
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("TODAY'S METAL").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
-            Text(state.activeGenres.isEmpty ? "Local Metal DBに候補がありません" : "指定Genreの未評価候補を探索します")
+            Text("今日のメタル").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
+            Text(state.activeGenres.isEmpty ? "Local Metal DBに候補がありません" : "指定ジャンルの未評価候補を探索します")
                 .font(.headline).foregroundStyle(.white)
             Button("地下を探索") { Task { await state.ensureGenrePool(minimumUnrated: 10, target: 20) } }
                 .buttonStyle(.borderedProminent).tint(MetalTheme.accent)
@@ -195,15 +147,14 @@ private struct ListenActions: View {
     @EnvironmentObject private var state: MetaranaiAppState
     let artist: MetalArtist
     @State private var showDeepDive = false
+    @State private var spotifyURL: URL? = nil
+    @State private var spotifyChecked = false
 
     var body: some View {
         VStack(spacing: 9) {
             HStack(spacing: 9) {
-                ActionButton(title: "Spotify", systemImage: "play.circle.fill") {
-                    Task {
-                        let destination = await state.spotifyDestination(for: artist)
-                        await MainActor.run { UIApplication.shared.open(destination.url) }
-                    }
+                ActionButton(title: spotifyChecked && spotifyURL == nil ? "Spotify未対応" : "Spotify", systemImage: "play.circle.fill", disabled: spotifyURL == nil) {
+                    if let spotifyURL { UIApplication.shared.open(spotifyURL) }
                 }
                 ActionButton(title: "YouTube", systemImage: "video.fill") {
                     if let url = state.youtubeURL(for: artist) { UIApplication.shared.open(url) }
@@ -219,6 +170,13 @@ private struct ListenActions: View {
                 }
             }
         }
+        .task(id: artist.id) {
+            let destination = await state.spotifyDestination(for: artist)
+            await MainActor.run {
+                spotifyURL = destination.direct ? destination.url : nil
+                spotifyChecked = true
+            }
+        }
         .sheet(isPresented: $showDeepDive) {
             NavigationStack { DeepDiveView(seed: artist) }
                 .presentationDetents([.medium, .large])
@@ -229,6 +187,7 @@ private struct ListenActions: View {
 private struct ActionButton: View {
     let title: String
     let systemImage: String
+    var disabled: Bool = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -236,6 +195,7 @@ private struct ActionButton: View {
                 .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 11)
         }
         .buttonStyle(.plain).background(MetalTheme.raised).clipShape(RoundedRectangle(cornerRadius: 13)).foregroundStyle(.white)
+        .disabled(disabled).opacity(disabled ? 0.45 : 1)
     }
 }
 
@@ -245,14 +205,17 @@ private struct RatingGrid: View {
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text("このArtistどうだった？").font(.caption.bold()).foregroundStyle(MetalTheme.muted)
+            Text("聴いた結果を教えてください").font(.caption.bold()).foregroundStyle(MetalTheme.muted)
             LazyVGrid(columns: columns, spacing: 9) {
-                ForEach(Reaction.allCases, id: \.rawValue) { reaction in
+                ForEach([Reaction.loveAll, .hit, .some, .meh, .noInterest], id: \.rawValue) { reaction in
                     Button(reaction.label) { state.rate(artist, reaction: reaction) }
                         .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(MetalTheme.card).clipShape(RoundedRectangle(cornerRadius: 13)).foregroundStyle(.white)
                 }
             }
+            Button(Reaction.notFound.label) { state.rate(artist, reaction: .notFound) }
+                .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(MetalTheme.card).clipShape(RoundedRectangle(cornerRadius: 13)).foregroundStyle(.white)
         }
     }
 }
@@ -267,7 +230,7 @@ private struct SearchView: View {
                 MetalTheme.background.ignoresSafeArea()
                 VStack(spacing: 12) {
                     HStack {
-                        TextField("Artist / Genre / Country", text: $query)
+                        TextField("バンド名 / ジャンル / 国", text: $query)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .padding(12).background(MetalTheme.card).clipShape(RoundedRectangle(cornerRadius: 13))
                             .onSubmit { Task { await state.search(query) } }
@@ -282,7 +245,7 @@ private struct SearchView: View {
                     .scrollContentBackground(.hidden)
                 }
             }
-            .navigationTitle("世界検索")
+            .navigationTitle("バンドを探す")
         }
     }
 }
@@ -293,7 +256,6 @@ private struct ArchiveView: View {
     @State private var genre: String? = nil
     @State private var reaction: Reaction? = nil
     @State private var onlyUnrated = false
-    @State private var vocal: VocalType? = nil
     @State private var sort: MetaranaiAppState.ArchiveSort = .recommended
 
     var body: some View {
@@ -302,7 +264,7 @@ private struct ArchiveView: View {
                 MetalTheme.background.ignoresSafeArea()
                 VStack(spacing: 8) {
                     HStack {
-                        Text("\(state.artists.count) ARTISTS").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
+                        Text("図鑑 \(state.artists.count)組").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
                         Spacer()
                         Picker("Sort", selection: $sort) {
                             ForEach(MetaranaiAppState.ArchiveSort.allCases) { Text($0.rawValue).tag($0) }
@@ -313,27 +275,23 @@ private struct ArchiveView: View {
                             FilterChip(label: "未評価", active: onlyUnrated) { onlyUnrated.toggle(); if onlyUnrated { reaction = nil } }
                             Menu {
                                 Button("すべて") { genre = nil }
-                                ForEach(GenreLensCore.names, id: \.self) { item in Button(item) { genre = item } }
-                            } label: { FilterChipLabel(label: genre ?? "Genre", active: genre != nil) }
+                                ForEach(GenreLensCore.names, id: \.self) { item in Button(GenreLensCore.displayName(item)) { genre = item } }
+                            } label: { FilterChipLabel(label: genre.map(GenreLensCore.displayName) ?? "ジャンル", active: genre != nil) }
                             Menu {
                                 Button("すべて") { reaction = nil }
                                 ForEach(Reaction.allCases, id: \.rawValue) { item in Button(item.label) { reaction = item; onlyUnrated = false } }
                             } label: { FilterChipLabel(label: reaction?.label ?? "評価", active: reaction != nil) }
-                            Menu {
-                                Button("すべて") { vocal = nil }
-                                ForEach(VocalType.allCases, id: \.rawValue) { item in Button(item.label) { vocal = item } }
-                            } label: { FilterChipLabel(label: vocal?.label ?? "Vo", active: vocal != nil) }
                         }.padding(.horizontal, 16)
                     }
-                    let rows = state.filteredArchive(query: query, genre: genre, filterReaction: reaction, onlyUnrated: onlyUnrated, vocal: vocal, sort: sort)
+                    let rows = state.filteredArchive(query: query, genre: genre, reaction: reaction, onlyUnrated: onlyUnrated, vocal: nil, sort: sort)
                     List(rows) { artist in
                         NavigationLink { ArtistDetailView(artist: artist) } label: { ArtistRow(artist: artist) }
                             .listRowBackground(MetalTheme.card)
                     }.scrollContentBackground(.hidden)
                 }
             }
-            .navigationTitle("METAL ARCHIVE")
-            .searchable(text: $query, prompt: "Artist / Country")
+            .navigationTitle("メタル図鑑")
+            .searchable(text: $query, prompt: "バンド名 / 国")
         }
     }
 }
@@ -364,9 +322,8 @@ private struct ArtistRow: View {
             Text("\(artist.genres.prefix(2).joined(separator: " / ")) · \(artist.country)")
                 .font(.caption).foregroundStyle(MetalTheme.muted).lineLimit(1)
             HStack {
-                Text("DNA \(Int((state.profile.similarity(to: artist.vector) * 100).rounded()))")
-                Text("HIDDEN \(artist.hiddenScore)")
-                Text(artist.vocalType.label)
+                Text("DNA一致度 \(Int((state.profile.similarity(to: artist.vector) * 100).rounded()))")
+                Text("発掘度 \(artist.hiddenScore)")
             }.font(.caption2.monospacedDigit()).foregroundStyle(MetalTheme.muted)
         }.padding(.vertical, 5)
     }
@@ -382,8 +339,7 @@ private struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(artist.name).font(.largeTitle.bold())
                     Text("\(artist.country) · \(artist.genres.joined(separator: " / "))").foregroundStyle(MetalTheme.muted)
-                    HStack { ScorePill(title: "DNA", value: Int((state.profile.similarity(to: artist.vector) * 100).rounded())); ScorePill(title: "HIDDEN", value: artist.hiddenScore) }
-                    Text(artist.reason).foregroundStyle(MetalTheme.muted)
+                    HStack { ScorePill(title: "DNA一致度", value: Int((state.profile.similarity(to: artist.vector) * 100).rounded())); ScorePill(title: "発掘度", value: artist.hiddenScore) }
                     ListenActions(artist: artist)
                     RatingGrid(artist: artist)
                 }.padding(18)
@@ -410,28 +366,55 @@ private struct DeepDiveView: View {
 
 private struct DNAView: View {
     @EnvironmentObject private var state: MetaranaiAppState
+    @State private var melody = 0.5
+    @State private var speed = 0.5
+    @State private var heavy = 0.5
+    @State private var symphonic = 0.5
+    @State private var technical = 0.5
+    @State private var growl = 0.5
+    @State private var cleanVocal = 0.5
+    @State private var catchy = 0.5
+
     var body: some View {
         NavigationStack {
             ZStack {
                 MetalTheme.background.ignoresSafeArea()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        BrandHeader()
                         Text(state.dnaType).font(.title2.bold()).foregroundStyle(.white)
-                        HStack(spacing: 10) {
-                            StatCard(title: "評価", value: "\(state.history.count)")
-                            StatCard(title: "好評価率", value: "\(state.positiveRate)%")
-                            StatCard(title: "平均刺さり", value: "\(state.averageAffinity)")
-                        }
-                        VStack(spacing: 12) {
-                            ForEach(Array(state.profile.traits.enumerated()), id: \.offset) { _, item in
-                                DNAProgress(label: item.0, value: item.1)
-                            }
-                        }.padding(16).background(MetalTheme.card).clipShape(RoundedRectangle(cornerRadius: 18))
-                        Text("VOCAL DNA").font(.caption.bold()).foregroundStyle(MetalTheme.acid)
-                        HStack { StatCard(title: "男性", value: "\(Int(state.vocalProfile.male * 100))%"); StatCard(title: "女性", value: "\(Int(state.vocalProfile.female * 100))%"); StatCard(title: "混成", value: "\(Int(state.vocalProfile.mixed * 100))%") }
+                        Text("8項目を0〜100で調整して、自分だけのDNAを作れます。")
+                            .font(.caption).foregroundStyle(MetalTheme.muted)
+                        dnaSlider("メロディ重視", $melody)
+                        dnaSlider("疾走感", $speed)
+                        dnaSlider("重厚さ", $heavy)
+                        dnaSlider("シンフォニック", $symphonic)
+                        dnaSlider("技巧性", $technical)
+                        dnaSlider("グロウル", $growl)
+                        dnaSlider("クリーンボーカル", $cleanVocal)
+                        dnaSlider("キャッチーさ", $catchy)
+                        Button("この数値でDNAを生成") {
+                            state.saveManualDNA(.init(melody: melody, speed: speed, heavy: heavy, symphonic: symphonic, technical: technical, growl: growl, cleanVocal: cleanVocal, catchy: catchy))
+                        }.buttonStyle(.borderedProminent).tint(MetalTheme.accent).frame(maxWidth: .infinity)
+                        Button("🎲 ランダムDNAで遊ぶ") {
+                            melody = .random(in: 0...1); speed = .random(in: 0...1); heavy = .random(in: 0...1); symphonic = .random(in: 0...1)
+                            technical = .random(in: 0...1); growl = .random(in: 0...1); cleanVocal = .random(in: 0...1); catchy = .random(in: 0...1)
+                        }.buttonStyle(.bordered).frame(maxWidth: .infinity)
                     }.padding(18)
                 }
-            }.navigationTitle("METAL DNA")
+            }
+            .navigationTitle("メタルDNA")
+            .onAppear {
+                melody = state.profile.melody; speed = state.profile.speed; heavy = state.profile.heavy; symphonic = state.profile.symphonic
+                technical = state.profile.technical; growl = state.profile.growl; cleanVocal = state.profile.cleanVocal; catchy = state.profile.catchy
+            }
+        }
+    }
+
+    private func dnaSlider(_ label: String, _ value: Binding<Double>) -> some View {
+        VStack(spacing: 4) {
+            HStack { Text(label).font(.subheadline.bold()); Spacer(); Text("\(Int(value.wrappedValue * 100))").foregroundStyle(MetalTheme.acid) }
+            Slider(value: value, in: 0...1, step: 0.05).tint(MetalTheme.accent)
         }
     }
 }

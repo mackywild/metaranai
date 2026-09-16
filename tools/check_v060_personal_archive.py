@@ -8,13 +8,14 @@ store=(root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
 ext=(root/'app/src/main/java/jp/metaranai/app/ExternalDiscoveryClient.kt').read_text()
 workflow=(root/'.github/workflows/android.yml').read_text()
 
-assert 'versionCode = 17' in build
-assert 'versionName = "0.9.0"' in build
+assert 'versionCode = 18' in build
+assert 'versionName = "0.9.1"' in build
 assert 'val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")' in ui
 assert 'private fun ArchiveScreen' in ui
-for marker in ['PERSONAL METAL ARCHIVE','未評価','GenreLensCatalog.names()','VocalType.FEMALE','Spotify本人確認済みリンク取得済み']:
+for marker in ['private fun ArchiveScreen','未評価','GenreLensCatalog.names()','Spotify本人確認済みリンク取得済み']:
     assert marker in ui, marker
-assert 'WHY THIS ARTIST?' in ui
+assert 'vocalFilter' not in ui
+assert 'WHY THIS ARTIST?' not in ui
 assert 'fun whyThisArtist' in vm
 assert 'fun deepDive(artist: MetalArtist)' in vm
 assert 'externalDiscovery.discover(listOf(artist.name), limitPerSeed = 18)' in vm
@@ -25,5 +26,5 @@ for density in ['mdpi','hdpi','xhdpi','xxhdpi','xxxhdpi']:
     assert (root/f'app/src/main/res/mipmap-{density}/ic_launcher.png').exists(), density
 assert 'out.put("version", 90)' in store
 assert 'Metaranai-Android/0.6.4' in ext
-assert 'metaranai-v0.9.0-apk' in workflow
+assert 'metaranai-v0.9.1-apk' in workflow
 print('V060_PERSONAL_METAL_ARCHIVE_OK')

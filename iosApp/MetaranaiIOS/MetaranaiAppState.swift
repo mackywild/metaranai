@@ -33,13 +33,15 @@ final class MetaranaiAppState: ObservableObject {
     var ratedArtistNames: Set<String> { Set(history.map { MetalArtist.normalizeName($0.artistName) }) }
     var unratedArtists: [MetalArtist] { artists.filter { !ratedArtistNames.contains(MetalArtist.normalizeName($0.name)) } }
     var positiveRate: Int {
-        guard !history.isEmpty else { return 0 }
-        let positive = history.filter { $0.reaction == .loveAll || $0.reaction == .hit || $0.reaction == .some }.count
-        return Int((Double(positive) / Double(history.count) * 100).rounded())
+        let judged = history.filter { $0.reaction != .notFound }
+        guard !judged.isEmpty else { return 0 }
+        let positive = judged.filter { $0.reaction == .loveAll || $0.reaction == .hit || $0.reaction == .some }.count
+        return Int((Double(positive) / Double(judged.count) * 100).rounded())
     }
     var averageAffinity: Int {
-        guard !history.isEmpty else { return 0 }
-        return Int((Double(history.map { $0.reaction.affinityScore }.reduce(0, +)) / Double(history.count)).rounded())
+        let judged = history.filter { $0.reaction != .notFound }
+        guard !judged.isEmpty else { return 0 }
+        return Int((Double(judged.map { $0.reaction.affinityScore }.reduce(0, +)) / Double(judged.count)).rounded())
     }
 
     func reload() {
@@ -71,12 +73,19 @@ final class MetaranaiAppState: ObservableObject {
             recomputeRecommendation(seed: Int.random(in: 1...999_999))
             return
         }
-        profile = RecommendationCore.updatedProfile(current: profile, artist: artist, reaction: reaction)
+        if reaction != .notFound { profile = RecommendationCore.updatedProfile(current: profile, artist: artist, reaction: reaction) }
         history.insert(DiscoveryRecord(artistName: artist.name, date: today, reaction: reaction, score: recommendation?.compatibility ?? 0), at: 0)
         defaults.set(MetalDataParser.profileJSON(profile), forKey: "profile")
         defaults.set(MetalDataParser.historyJSON(history), forKey: "history")
         statusMessage = "\(reaction.label) を記録しました"
         recomputeRecommendation(seed: Int.random(in: 1...999_999))
+    }
+
+    func saveManualDNA(_ vector: MetalVector) {
+        profile = vector
+        defaults.set(MetalDataParser.profileJSON(profile), forKey: "profile")
+        statusMessage = "DNAを更新しました"
+        recomputeRecommendation()
     }
 
     func setLensMode(_ mode: GenreLensMode) {
@@ -213,7 +222,7 @@ final class MetaranaiAppState: ObservableObject {
     }
 
     enum ArchiveSort: String, CaseIterable, Identifiable {
-        case recommended = "おすすめ順", hidden = "HIDDEN", name = "名前順"
+        case recommended = "おすすめ順", hidden = "発掘度順", name = "名前順"
         var id: String { rawValue }
     }
 

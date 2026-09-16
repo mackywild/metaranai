@@ -22,6 +22,7 @@ object VocalAnalyzer {
             Reaction.SOME -> .07f
             Reaction.MEH -> -.05f
             Reaction.NO_INTEREST -> -.14f
+            Reaction.NOT_FOUND -> 0f
         }
         fun move(value: Float, target: Boolean): Float {
             return if (weight >= 0f) {

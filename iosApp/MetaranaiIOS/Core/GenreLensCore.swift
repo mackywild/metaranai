@@ -30,6 +30,16 @@ enum GenreLensCore {
 
     static var names: [String] { lenses.map(\.name) }
 
+    static let japaneseNames: [String: String] = [
+        "Melodic Metal":"メロディックメタル", "Power Metal":"パワーメタル", "Symphonic Metal":"シンフォニックメタル",
+        "Gothic Metal":"ゴシックメタル", "Metalcore":"メタルコア", "Melodic Death Metal":"メロディックデスメタル",
+        "Progressive Metal":"プログレッシブメタル", "Glam Metal":"グラムメタル", "Japanese Metal":"ジャパニーズメタル",
+        "Nu Metal":"ニューメタル", "Folk Metal":"フォークメタル", "Doom Metal":"ドゥームメタル",
+        "Thrash Metal":"スラッシュメタル", "Black Metal":"ブラックメタル", "Death Metal":"デスメタル",
+        "Neoclassical Metal":"ネオクラシカルメタル", "Heavy Metal":"ヘヴィメタル", "Alternative Metal":"オルタナティヴメタル"
+    ]
+    static func displayName(_ name: String) -> String { japaneseNames[name] ?? name }
+
     static func activeGenres(_ config: GenreLensConfig, date: Date = Date(), calendar: Calendar = .current) -> [String] {
         switch config.mode {
         case .off: return []

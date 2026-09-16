@@ -13,8 +13,9 @@ for alias in ['hair metal', 'sleaze metal', 'j-metal', 'japanese heavy metal', '
     assert alias in genre or alias in tags, alias
 assert 'locationText.contains("japan")' in genre
 assert 'lens.name == "Japanese Metal"' in genre
-assert 'versionCode = 17' in build
-assert 'versionName = "0.9.0"' in build
+assert 'versionCode = 18' in build
+assert 'versionName = "0.9.1"' in build
 assert 'Metaranai-Android/0.6.4' in ext
-assert 'v0.9.0' in ui
+assert 'メタルバンド探索アプリケーション' in ui
+assert 'displayName' in genre
 print('V053_GENRE_LENS_EXPANSION_OK')

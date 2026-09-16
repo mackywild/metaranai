@@ -5,7 +5,7 @@ mb=(root/'app/src/main/java/jp/metaranai/app/MusicBrainzClient.kt').read_text()
 store=(root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
 vm=(root/'app/src/main/java/jp/metaranai/app/MainViewModel.kt').read_text()
 build=(root/'app/build.gradle.kts').read_text()
-assert 'versionCode = 17' in build and 'versionName = "0.9.0"' in build
+assert 'versionCode = 18' in build and 'versionName = "0.9.1"' in build
 assert 'store.spotifyArtistLinkV064(artist)' in spotify and 'store.saveSpotifyArtistLinkV064' in spotify
 assert 'resolveIdentityForSpotify(artist)' in spotify
 for marker in ['countryMatch','areaMatch','beginExact','名前完全一致','国一致','開始年一致']: assert marker in mb, marker

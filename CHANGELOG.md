@@ -1,3 +1,11 @@
+
+## V0.9.1 配布向けUI調整
+- 日本語中心の配布向けUIへ整理
+- Spotify完全一致時のみリンク有効
+- 「見つからなかった」記録を追加（DNA学習対象外）
+- Vo絞り込みUIを廃止し内部データのみ維持
+- 数値スライダー式Metal DNA生成を追加
+
 # Changelog
 
 ## 0.9.0 — ACCOUNT & PERSONALIZATION

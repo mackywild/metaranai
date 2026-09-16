@@ -60,6 +60,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val spotifySignals: StateFlow<List<String>> = _spotifySignals
     private val _spotifyOpenStatus = MutableStateFlow("")
     val spotifyOpenStatus: StateFlow<String> = _spotifyOpenStatus
+    private val _spotifyAvailability = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val spotifyAvailability: StateFlow<Map<String, Boolean>> = _spotifyAvailability
 
     private val _discoveryStatus = MutableStateFlow(store.discoverySummary())
     val discoveryStatus: StateFlow<String> = _discoveryStatus
@@ -134,8 +136,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val record = DiscoveryRecord(rec.artist.name, today, reaction, rec.compatibility)
         _history.value = listOf(record) + _history.value
-        _profile.value = engine.updatedProfile(_profile.value, rec.artist, reaction)
-        _vocalProfile.value = VocalAnalyzer.update(_vocalProfile.value, rec.artist.vocalType, reaction)
+        if (reaction != Reaction.NOT_FOUND) {
+            _profile.value = engine.updatedProfile(_profile.value, rec.artist, reaction)
+            _vocalProfile.value = VocalAnalyzer.update(_vocalProfile.value, rec.artist.vocalType, reaction)
+        }
         showReactionStatus("${reaction.label} を記録しました")
         persistAndRefresh()
         refreshAfterReaction()
@@ -193,15 +197,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduleCloudSync()
     }
 
+    private fun spotifyKey(artist: MetalArtist): String = artist.name.trim().lowercase()
+
+    fun checkSpotifyArtistAvailability(artist: MetalArtist) {
+        val key = spotifyKey(artist)
+        if (_spotifyAvailability.value.containsKey(key)) return
+        viewModelScope.launch {
+            val destination = spotify.resolveArtistDestination(artist)
+            _spotifyAvailability.value = _spotifyAvailability.value + (key to destination.direct)
+        }
+    }
+
+    fun spotifyAvailable(artist: MetalArtist): Boolean? = _spotifyAvailability.value[spotifyKey(artist)]
+
     fun openSpotifyArtist(artist: MetalArtist) {
         _spotifyOpenStatus.value = "Spotify上の${artist.name}を照合中…"
         viewModelScope.launch {
             val destination = spotify.resolveArtistDestination(artist)
-            _spotifyOpenStatus.value = if (destination.direct) {
-                "本人確認済み: ${destination.verification}"
-            } else {
-                destination.verification.ifBlank { "本人を特定できないためSpotify検索へ移動" }
+            _spotifyAvailability.value = _spotifyAvailability.value + (spotifyKey(artist) to destination.direct)
+            if (!destination.direct) {
+                _spotifyOpenStatus.value = destination.verification.ifBlank { "Spotifyで本人の完全一致を確認できませんでした" }
+                return@launch
             }
+            _spotifyOpenStatus.value = "Spotify本人確認済み"
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(destination.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             getApplication<Application>().startActivity(intent)
         }
@@ -286,6 +304,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveLastFmApiKey(value: String) = store.saveLastFmApiKey(value)
     fun externalCount() = _externalArtists.value.size
     fun dnaType() = engine.dnaType(_profile.value, _vocalProfile.value, _history.value)
+    fun saveManualDna(vector: MetalVector) {
+        _profile.value = vector.clamped()
+        store.saveProfile(_profile.value)
+        _recommendation.value = recommendNow()
+        scheduleCloudSync()
+    }
     fun activeGenres(): List<String> = GenreLensCatalog.activeGenres(_genreLens.value)
 
     /** V0.6.0 Personal Metal Archive. Built-ins and discovered artists share one deduplicated view. */
@@ -371,9 +395,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stats(): DiscoveryStats {
         val h = _history.value
-        val favorites = h.count { it.reaction == Reaction.LOVE_ALL }
-        val positives = h.count { it.reaction.isPositive }
-        val average = if (h.isEmpty()) 0 else h.sumOf { it.reaction.affinityScore } / h.size
+        val judged = h.filter { it.reaction != Reaction.NOT_FOUND }
+        val favorites = judged.count { it.reaction == Reaction.LOVE_ALL }
+        val positives = judged.count { it.reaction.isPositive }
+        val average = if (judged.isEmpty()) 0 else judged.sumOf { it.reaction.affinityScore } / judged.size
         val dates = h.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet()
         var streak = 0
         var d = LocalDate.now()
@@ -382,7 +407,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             total = h.size,
             favorites = favorites,
             positives = positives,
-            positiveRate = if (h.isEmpty()) 0 else positives * 100 / h.size,
+            positiveRate = if (judged.isEmpty()) 0 else positives * 100 / judged.size,
             averageAffinity = average,
             streakDays = streak
         )

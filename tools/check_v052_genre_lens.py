@@ -10,6 +10,6 @@ assert 'val eligible = if (lensActive) GenreLensCatalog.filter' in engine
 assert 'ensureGenrePool' in ext
 assert 'minimumUnratedLensPoolPerGenre = 10' in vm
 assert 'Genre Lens未評価候補不足' in vm
-assert 'GENRE LENS DIGGING' in ui
-assert '指定ジャンル以外は出さない' in ui
+assert '本日のジャンル:' in ui
+assert '指定ジャンルの未評価バンドを補充' in ui
 print('V052_STRICT_GENRE_LENS_OK')

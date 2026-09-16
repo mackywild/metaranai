@@ -5,9 +5,9 @@ root = Path(__file__).resolve().parents[1]
 android = (root/'app/build.gradle.kts').read_text()
 main = (root/'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
 store = (root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
-assert 'versionCode = 17' in android
-assert 'versionName = "0.9.0"' in android
-assert 'v0.9.0 · ACCOUNT & PERSONALIZATION' in main
+assert 'versionCode = 18' in android
+assert 'versionName = "0.9.1"' in android
+assert 'メタルバンド探索アプリケーション' in main
 assert 'out.put("version", 90)' in store
 assert 'require(root.optInt("version")' not in store
 
@@ -64,7 +64,7 @@ assert seed.count('MetalArtist(') >= 35
 assert 'SKYWINGS' in seed and 'Marius Danielsen' in seed
 
 ui = (root/'iosApp/MetaranaiIOS/ContentView.swift').read_text()
-for text in ['TODAY\'S METAL','GENRE LENS','METAL ARCHIVE','METAL DNA','世界検索','Deep Dive','JSONバックアップを復元']:
+for text in ['今日のメタル','本日のジャンル:','メタル図鑑','メタルDNA','バンドを探す','JSONバックアップを復元']:
     assert text in ui, text
 for reaction in ['全部好き','普通に刺さる','何曲か刺さる','イマイチ','興味なし']:
     assert reaction in (root/'iosApp/MetaranaiIOS/Core/CoreModels.swift').read_text()
@@ -97,8 +97,8 @@ assert 'wrongSameNameTracks' in coretests
 
 with open(root/'iosApp/MetaranaiIOS/Info.plist','rb') as f:
     info=plistlib.load(f)
-assert info['CFBundleShortVersionString']=='0.9.0'
-assert info['CFBundleVersion']=='17'
+assert info['CFBundleShortVersionString']=='0.9.1'
+assert info['CFBundleVersion']=='18'
 assert info['CFBundleURLTypes'][0]['CFBundleURLSchemes']==['metaranai-login']
 with open(root/'iosApp/MetaranaiIOS/PrivacyInfo.xcprivacy','rb') as f:
     privacy=plistlib.load(f)
@@ -117,4 +117,4 @@ assert len(json.loads(fixture['preferences']['history']))==2
 assert len(json.loads(fixture['preferences']['external_artists']))==2
 
 print('V080_IOS_BETA_STRUCTURE_OK')
-print('Android v0.9.0 retains portable JSON + SwiftUI iOS beta + PKCE + simulator CI')
+print('Android v0.9.1 retains portable JSON + SwiftUI iOS beta + PKCE + simulator CI')
