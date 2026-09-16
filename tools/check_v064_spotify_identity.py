@@ -7,9 +7,9 @@ build=(root/'app/build.gradle.kts').read_text()
 workflow=(root/'.github/workflows/android.yml').read_text()
 vm=(root/'app/src/main/java/jp/metaranai/app/MainViewModel.kt').read_text()
 
-assert 'versionCode = 19' in build
-assert 'versionName = "0.9.1.1"' in build
-assert 'metaranai-v0.9.1.1-apk' in workflow
+assert 'versionCode = 20' in build
+assert 'versionName = "0.9.2"' in build
+assert 'metaranai-v0.9.2-apk' in workflow
 assert 'store.spotifyArtistLinkV064(artist)' in spotify
 assert 'store.saveSpotifyArtistLinkV064' in spotify
 assert 'spotify_artist_links_v064' in store

@@ -495,10 +495,7 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun DnaScreen(vm: MainViewModel) {
     val p by vm.profile.collectAsState()
-    val learningChanges by vm.dnaLearningChangeCount.collectAsState()
     val topGenres = vm.topGenres()
-    val interval = vm.dnaRegenerationInterval()
-    val remaining = (interval - learningChanges).coerceAtLeast(1)
     val metrics = listOf(
         "メロディ重視" to p.melody,
         "疾走感" to p.speed,
@@ -516,12 +513,6 @@ private fun DnaScreen(vm: MainViewModel) {
             Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp)) {
                 Text("あなたのメタルDNA", color = Acid, fontWeight = FontWeight.Bold)
                 Text(vm.dnaType(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 5.dp))
-                Text("DNA名と数値は、評価・探索・Spotify解析から自動学習します。手動編集はできません。", color = Muted, fontSize = 11.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 6.dp))
-                Text("DNA名の次回自動生成まで あと${remaining}回の学習変動", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                LinearProgressIndicator(
-                    progress = { learningChanges.toFloat() / interval.toFloat() },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
             }
             Spacer(Modifier.height(10.dp))
         }
@@ -618,7 +609,7 @@ private fun SettingsScreen(vm: MainViewModel) {
                 Text("図鑑DB: ${vm.archiveDatabaseCount()}組", color = Color.White, fontSize = 11.sp)
                 Text("互換バックアップ: metaranai-backup JSON", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                 Spacer(Modifier.height(10.dp))
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.1.1.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.2.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))

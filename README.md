@@ -1,6 +1,16 @@
-# メタらない？ v0.9.0 — ACCOUNT & PERSONALIZATION
+# メタらない？ v0.9.2 — DNA UI CLEANUP
 
 誰がインストールしても、その人自身のMETAL DNAから始まるためのアカウント/初期登録アップデート。
+
+
+V0.9.2は、METAL DNAをユーザー編集不可の自動学習プロフィールとして整理し、DNA画面から内部仕様の説明や「次回変動まであと○回」表示を取り除いた配布向け更新です。
+
+## V0.9.2 Highlights
+- DNA画面は「あなたのメタルDNA」「DNA名」「8軸の数値」「刺さっているジャンル」を中心に表示。
+- DNA名・DNA数値はユーザー操作で変更せず、評価・探索・Spotify解析による学習結果で自動更新。
+- 自動命名の内部カウンタや再生成タイミングはUIに表示しない。
+- Android versionCode 20 / versionName 0.9.2。
+- iOS Marketing Version 0.9.2 / Build 20。
 
 ## V0.9.0 Highlights
 - 新規ユーザーの初期MetalVectorを8軸すべて0.50のニュートラルへ変更。旧ユーザーの保存済みprofileは変更しない。
@@ -19,11 +29,11 @@ Social/Email cloud accountを有効にするには `docs/17_ACCOUNT_AND_FIREBASE
 ## Compatibility
 - Android applicationId: `jp.metaranai.app`
 - Android SharedPreferences: `metaranai`
-- Android versionCode: 17
-- Android versionName: 0.9.0
+- Android versionCode: 20
+- Android versionName: 0.9.2
 - iOS Bundle ID: `jp.metaranai.ios`
-- iOS Version: 0.9.0
-- iOS Build: 17
+- iOS Version: 0.9.2
+- iOS Build: 20
 - Portable backup: `format = metaranai-backup`, version 90
 
 ## Regression

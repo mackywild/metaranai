@@ -17,7 +17,9 @@ assert 'reaction != Reaction.NOT_FOUND' in vm
 assert 'private fun SpotifyButton' in ui and 'enabled = available == true' in ui
 assert 'fun saveManualDna' not in vm
 assert 'この数値でDNAを生成' not in ui and 'ランダムDNAで遊ぶ' not in ui
-assert '手動編集はできません' in ui and 'LinearProgressIndicator' in ui
+assert 'あなたのメタルDNA' in ui and 'LinearProgressIndicator' in ui
+assert '手動編集はできません' not in ui[ui.index('private fun DnaScreen'):ui.index('private fun SettingsScreen')]
+assert 'DNA名の次回自動生成まで' not in ui
 assert 'fun displayName' in genre
 assert 'メタルバンド探索アプリケーション' in ios
 assert 'case notFound = "NOT_FOUND"' in ios_models

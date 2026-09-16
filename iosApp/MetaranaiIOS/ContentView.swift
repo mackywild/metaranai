@@ -374,15 +374,9 @@ private struct DNAView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         BrandHeader()
+                        Text("あなたのメタルDNA")
+                            .font(.headline.bold()).foregroundStyle(MetalTheme.acid)
                         Text(state.dnaType).font(.title2.bold()).foregroundStyle(.white)
-                        Text("DNA名と数値は、評価などの学習結果から自動更新されます。手動編集はできません。")
-                            .font(.caption).foregroundStyle(MetalTheme.muted)
-                        Text("DNA名の次回自動生成まで あと\(state.dnaRegenerationRemaining)回の学習変動")
-                            .font(.caption.bold()).foregroundStyle(MetalTheme.acid)
-                        ProgressView(
-                            value: Double(state.dnaLearningChangeCount),
-                            total: Double(state.dnaRegenerationInterval)
-                        ).tint(MetalTheme.accent)
 
                         DNAProgress(label: "メロディ重視", value: state.profile.melody)
                         DNAProgress(label: "疾走感", value: state.profile.speed)
