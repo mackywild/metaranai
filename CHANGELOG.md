@@ -1,5 +1,15 @@
 # Changelog
 
+## V0.9.3 — AUTHENTICATION RELIABILITY
+- Androidの主力ログインをGoogle（Credential Manager -> Google ID token -> Firebase Auth）として明確化。
+- Firebase AuthenticationとFirebase Storageの設定判定を分離。`FIREBASE_STORAGE_BUCKET`未設定でもGoogle / Email認証できるよう修正。
+- Email/Password新規登録後に確認メールを送信し、メール確認完了前の通常ログインを許可しないフローへ変更。
+- 未確認メールアカウントのログイン時は確認メール再送を試行。
+- Storage未設定時は認証セッションを維持し、クラウド同期だけを無効化。
+- OnboardingではGoogleを推奨表示、Emailをfallback、Guestを継続。Apple / Facebook / Xは任意のその他ログインへ整理。
+- `docs/20_V093_AUTH_SETUP.md` と `tools/check_v093_auth.py` を追加。
+- Android versionCode 21 / versionName 0.9.3。iOS project metadata 0.9.3 / Build 21。
+
 ## V0.9.2 — DNA UI CLEANUP
 - DNA画面から「手動編集できない」説明文を削除。
 - 「DNA名の次回自動生成まであと○回」の表示と内部カウンタ用プログレス表示を削除。

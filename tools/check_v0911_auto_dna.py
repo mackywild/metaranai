@@ -10,9 +10,9 @@ backup = (root / 'iosApp/MetaranaiIOS/Core/PortableBackup.swift').read_text()
 build = (root / 'app/build.gradle.kts').read_text()
 workflow = (root / '.github/workflows/android.yml').read_text()
 
-assert 'versionCode = 20' in build
-assert 'versionName = "0.9.2"' in build
-assert 'metaranai-v0.9.2-apk' in workflow
+assert 'versionCode = 21' in build
+assert 'versionName = "0.9.3"' in build
+assert 'metaranai-v0.9.3-apk' in workflow
 
 # Android: DNA values/name are read-only and the name is regenerated every 5 learned changes.
 assert 'private val dnaRegenerationInterval = 5' in vm

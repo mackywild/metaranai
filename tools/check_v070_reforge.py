@@ -5,8 +5,8 @@ root = Path(__file__).resolve().parents[1]
 main = (root / "app/src/main/java/jp/metaranai/app/MainActivity.kt").read_text()
 viewmodel = (root / "app/src/main/java/jp/metaranai/app/MainViewModel.kt").read_text()
 gradle = (root / "app/build.gradle.kts").read_text()
-assert 'versionCode = 20' in gradle
-assert 'versionName = "0.9.2"' in gradle
+assert 'versionCode = 21' in gradle
+assert 'versionName = "0.9.3"' in gradle
 assert 'メタルバンド探索アプリケーション' in main
 assert 'なぜこのArtist？ / スコアを見る' not in main
 assert 'private fun ReactionSelector' in main

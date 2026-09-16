@@ -609,7 +609,7 @@ private fun SettingsScreen(vm: MainViewModel) {
                 Text("図鑑DB: ${vm.archiveDatabaseCount()}組", color = Color.White, fontSize = 11.sp)
                 Text("互換バックアップ: metaranai-backup JSON", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                 Spacer(Modifier.height(10.dp))
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.2.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
+                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.3.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
                 if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
@@ -644,6 +644,7 @@ private fun OnboardingScreen(vm: MainViewModel) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var createEmail by remember { mutableStateOf(true) }
+    var showOtherProviders by remember { mutableStateOf(false) }
 
     LazyColumn(Modifier.fillMaxSize().background(Bg), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -657,23 +658,44 @@ private fun OnboardingScreen(vm: MainViewModel) {
             Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("アカウント", color = Acid, fontWeight = FontWeight.Bold)
                 if (account == null) {
-                    Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.fillMaxWidth()) { Text("Googleで続ける") }
-                    OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.fillMaxWidth()) { Text("Appleで続ける") }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
-                        OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
+                    Text("おすすめ", color = Muted, fontSize = 10.sp)
+                    Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Googleで続ける")
                     }
-                    TextButton(onClick = { showEmail = !showEmail }, modifier = Modifier.fillMaxWidth()) { Text("メールアドレスで続ける") }
+
+                    TextButton(onClick = { showEmail = !showEmail }, modifier = Modifier.fillMaxWidth()) {
+                        Text("メールアドレスで続ける")
+                    }
                     if (showEmail) {
                         OutlinedTextField(email, { email = it }, label = { Text("メールアドレス") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(password, { password = it }, label = { Text("パスワード（6文字以上）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(createEmail, { createEmail = it }); Text(if (createEmail) "新規作成" else "ログイン", color = Color.White)
                         }
-                        Button(onClick = { vm.signInEmail(email, password, createEmail) }, modifier = Modifier.fillMaxWidth()) { Text(if (createEmail) "アカウント作成" else "ログイン") }
+                        Button(onClick = { vm.signInEmail(email, password, createEmail) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (createEmail) "確認メールを送信して登録" else "ログイン")
+                        }
+                        if (createEmail) Text("登録後、届いた確認メールのリンクを開いてからログインします。", color = Muted, fontSize = 10.sp)
                     }
+
+                    TextButton(onClick = { showOtherProviders = !showOtherProviders }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (showOtherProviders) "その他のログインを閉じる" else "その他のログイン")
+                    }
+                    if (showOtherProviders) {
+                        OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.fillMaxWidth()) { Text("Appleで続ける") }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
+                            OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
+                        }
+                    }
+
                     OutlinedButton(onClick = vm::signInGuest, modifier = Modifier.fillMaxWidth()) { Text("アカウントなしで試す") }
-                    if (!vm.cloudConfigured) Text("※ Google / Apple / Facebook / X / EmailはFirebase設定後に有効。ゲストはオフラインでも利用可能。", color = Muted, fontSize = 10.sp)
+
+                    when {
+                        !vm.authConfigured -> Text("※ Firebase Authentication未設定。Google/メール等を使うにはFirebase設定が必要です。ゲストは利用できます。", color = Muted, fontSize = 10.sp)
+                        !vm.googleConfigured -> Text("※ メール認証は利用可能です。GoogleログインにはGOOGLE_WEB_CLIENT_IDの設定が必要です。", color = Muted, fontSize = 10.sp)
+                        !vm.cloudConfigured -> Text("※ ログインは利用可能です。クラウド同期のみFirebase Storage未設定のため無効です。", color = Muted, fontSize = 10.sp)
+                    }
                 } else {
                     Text("${account!!.displayName.ifBlank { account!!.email.ifBlank { "Guest" } }} で開始", color = Color.White)
                 }
@@ -707,18 +729,18 @@ private fun AccountSettingsCard(vm: MainViewModel) {
     var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }
     SettingsCard("アカウントとクラウド同期", "Google / Apple / Facebook / X / メールで記録を引き継げます。JSONバックアップも非常用として維持します。") {
         if (account == null) {
+            Text("おすすめ", color = Muted, fontSize = 10.sp)
+            Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.fillMaxWidth()) { Text("Googleで続ける") }
+            OutlinedTextField(email, { email = it }, label = { Text("メールアドレス") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(password, { password = it }, label = { Text("パスワード（6文字以上）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { vm.signInEmail(email, password, true) }, modifier = Modifier.fillMaxWidth()) { Text("確認メールを送信して登録") }
+            TextButton(onClick = { vm.signInEmail(email, password, false) }, modifier = Modifier.fillMaxWidth()) { Text("既存メールでログイン") }
+            Text("その他", color = Muted, fontSize = 10.sp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.weight(1f)) { Text("Google") }
                 OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.weight(1f)) { Text("Apple") }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
                 OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
             }
-            OutlinedTextField(email, { email = it }, label = { Text("メールアドレス") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { vm.signInEmail(email, password, true) }, modifier = Modifier.fillMaxWidth()) { Text("メールで新規作成") }
-            TextButton(onClick = { vm.signInEmail(email, password, false) }, modifier = Modifier.fillMaxWidth()) { Text("既存メールでログイン") }
         } else {
             Text("ログイン中  ${account!!.provider}", color = Acid, fontWeight = FontWeight.Bold)
             Text(account!!.email.ifBlank { account!!.displayName.ifBlank { account!!.uid } }, color = Color.White, fontSize = 11.sp)
@@ -732,11 +754,16 @@ private fun AccountSettingsCard(vm: MainViewModel) {
                 Text("この端末にV0.8以前の記録があります。クラウドへ引き継ぐまで端末データは変更しません。", color = Color.White, fontSize = 11.sp)
                 Button(onClick = vm::migrateLocalDataToAccount, modifier = Modifier.fillMaxWidth()) { Text("この端末の記録をアカウントへ引き継ぐ") }
             }
-            Button(onClick = vm::syncAccountNow, modifier = Modifier.fillMaxWidth()) { Text("今すぐクラウド同期") }
+            Button(onClick = vm::syncAccountNow, enabled = vm.cloudConfigured, modifier = Modifier.fillMaxWidth()) { Text("今すぐクラウド同期") }
+            if (!vm.cloudConfigured) Text("クラウド同期はFirebase Storage設定後に利用できます。ログイン自体は有効です。", color = Muted, fontSize = 10.sp)
             OutlinedButton(onClick = vm::signOutAccount, modifier = Modifier.fillMaxWidth()) { Text("ログアウト") }
             TextButton(onClick = vm::deleteAccount, modifier = Modifier.fillMaxWidth()) { Text("アカウントを削除") }
         }
-        if (!vm.cloudConfigured) Text("Firebase未設定：docs/17_ACCOUNT_AND_FIREBASE_SETUP.md を参照。ゲスト/既存Localデータはそのまま利用できます。", color = Muted, fontSize = 10.sp)
+        when {
+            !vm.authConfigured -> Text("Firebase Authentication未設定：docs/17_ACCOUNT_AND_FIREBASE_SETUP.md を参照。ゲスト/既存Localデータは利用できます。", color = Muted, fontSize = 10.sp)
+            !vm.googleConfigured -> Text("Googleログイン未設定：GOOGLE_WEB_CLIENT_IDを確認してください。メール認証は利用できます。", color = Muted, fontSize = 10.sp)
+            !vm.cloudConfigured -> Text("Firebase Storage未設定：ログインは利用できますがクラウド同期は無効です。", color = Muted, fontSize = 10.sp)
+        }
         if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
     }
     Spacer(Modifier.height(12.dp))

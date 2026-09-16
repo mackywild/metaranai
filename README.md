@@ -1,9 +1,15 @@
-# メタらない？ v0.9.2 — DNA UI CLEANUP
+# メタらない？ v0.9.3 — AUTHENTICATION RELIABILITY
 
-誰がインストールしても、その人自身のMETAL DNAから始まるためのアカウント/初期登録アップデート。
+V0.9.3は、GoogleをAndroidの主力ログインとして整理し、認証とクラウドStorageを分離した認証安定化アップデートです。DNA/推薦/Local Metal DBの既存データ互換性は維持します。
 
-
-V0.9.2は、METAL DNAをユーザー編集不可の自動学習プロフィールとして整理し、DNA画面から内部仕様の説明や「次回変動まであと○回」表示を取り除いた配布向け更新です。
+## V0.9.3 Highlights
+- Google: Android Credential Manager -> Google ID token -> Firebase Authentication。
+- Email/Password: fallback。新規登録は確認メールを送り、確認完了後にログイン。
+- Guest: Firebase未設定でもLocal Guestで利用可能。
+- Firebase Authに必要なのは `FIREBASE_API_KEY` / `FIREBASE_APP_ID` / `FIREBASE_PROJECT_ID`。
+- `FIREBASE_STORAGE_BUCKET` はクラウド同期専用。未設定でもGoogle/Emailログインを止めない。
+- Android versionCode 21 / versionName 0.9.3。
+- iOS project metadata: Marketing Version 0.9.3 / Build 21（Native Firebase account wiringは別release task）。
 
 ## V0.9.2 Highlights
 - DNA画面は「あなたのメタルDNA」「DNA名」「8軸の数値」「刺さっているジャンル」を中心に表示。
@@ -24,16 +30,16 @@ V0.9.2は、METAL DNAをユーザー編集不可の自動学習プロフィー�
 - `Yutaro Abe's ASTRAL WIND` Spotify Identity回帰試験は継続。
 
 ## Firebase
-Social/Email cloud accountを有効にするには `docs/17_ACCOUNT_AND_FIREBASE_SETUP.md` の設定が必要。Firebase未設定でもGuest + Local + JSON Backupは利用可能。
+Google/Email認証とCloud Storageは独立設定。詳細は `docs/17_ACCOUNT_AND_FIREBASE_SETUP.md` / `docs/20_V093_AUTH_SETUP.md`。Firebase未設定でもGuest + Local + JSON Backupは利用可能。
 
 ## Compatibility
 - Android applicationId: `jp.metaranai.app`
 - Android SharedPreferences: `metaranai`
-- Android versionCode: 20
-- Android versionName: 0.9.2
+- Android versionCode: 21
+- Android versionName: 0.9.3
 - iOS Bundle ID: `jp.metaranai.ios`
-- iOS Version: 0.9.2
-- iOS Build: 20
+- iOS Version: 0.9.3
+- iOS Build: 21
 - Portable backup: `format = metaranai-backup`, version 90
 
 ## Regression

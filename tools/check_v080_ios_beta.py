@@ -5,8 +5,8 @@ root = Path(__file__).resolve().parents[1]
 android = (root/'app/build.gradle.kts').read_text()
 main = (root/'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
 store = (root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
-assert 'versionCode = 20' in android
-assert 'versionName = "0.9.2"' in android
+assert 'versionCode = 21' in android
+assert 'versionName = "0.9.3"' in android
 assert 'メタルバンド探索アプリケーション' in main
 assert 'out.put("version", 90)' in store
 assert 'require(root.optInt("version")' not in store
@@ -97,8 +97,8 @@ assert 'wrongSameNameTracks' in coretests
 
 with open(root/'iosApp/MetaranaiIOS/Info.plist','rb') as f:
     info=plistlib.load(f)
-assert info['CFBundleShortVersionString']=='0.9.2'
-assert info['CFBundleVersion']=='20'
+assert info['CFBundleShortVersionString']=='0.9.3'
+assert info['CFBundleVersion']=='21'
 assert info['CFBundleURLTypes'][0]['CFBundleURLSchemes']==['metaranai-login']
 with open(root/'iosApp/MetaranaiIOS/PrivacyInfo.xcprivacy','rb') as f:
     privacy=plistlib.load(f)
@@ -117,4 +117,4 @@ assert len(json.loads(fixture['preferences']['history']))==2
 assert len(json.loads(fixture['preferences']['external_artists']))==2
 
 print('V080_IOS_BETA_STRUCTURE_OK')
-print('Android v0.9.2 retains portable JSON + SwiftUI iOS beta + PKCE + simulator CI')
+print('Android v0.9.3 retains portable JSON + SwiftUI iOS beta + PKCE + simulator CI')

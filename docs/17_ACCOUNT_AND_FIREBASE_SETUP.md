@@ -1,72 +1,132 @@
-# V0.9.0 Account / Firebase Setup
+# Account / Firebase Setup — V0.9.3
 
-V0.9.0 adds per-user accounts and cloud backup while preserving the legacy `metaranai-backup` JSON as the portable recovery format.
+V0.9.3 keeps per-user accounts and portable cloud backup while separating **authentication** from **Firebase Storage**.
+
+The important rule is:
+
+- Google / Email authentication requires Firebase Authentication configuration.
+- Cloud backup additionally requires Firebase Storage.
+- A missing Storage bucket must not block login.
 
 ## 1. Firebase project
 1. Create a Firebase project dedicated to メタらない？.
-2. Enable Authentication providers to ship: Google, Apple, Facebook, Twitter/X, Email/Password and Anonymous.
-3. Enable Cloud Firestore and Cloud Storage.
-4. Deploy the rules in `firebase/firestore.rules` and `firebase/storage.rules` before distribution.
+2. Register Android package `jp.metaranai.app`.
+3. Add the SHA-1 and SHA-256 fingerprints from the stable release signing certificate.
+4. In Authentication -> Sign-in method, enable the providers you intend to ship.
+   - Recommended Android primary: **Google**
+   - Fallback: **Email/Password**
+   - Optional: Anonymous, Apple, Facebook, Twitter/X
+5. Enable Cloud Firestore and Cloud Storage only when cloud backup/sync is required.
+6. Deploy `firebase/firestore.rules` and `firebase/storage.rules` before enabling production cloud sync.
 
-## 2. Android build secrets
-Set these as GitHub Actions repository secrets (or equivalent environment variables):
+## 2. Android build values
+Set these as GitHub Actions repository secrets or equivalent environment variables.
+
+### Required for Firebase Authentication
 - `FIREBASE_API_KEY`
 - `FIREBASE_APP_ID`
 - `FIREBASE_PROJECT_ID`
+
+### Required for Google login
+- `GOOGLE_WEB_CLIENT_ID` — the Web OAuth client ID used as the server client ID by Android Credential Manager. Do not use the Android OAuth client ID here.
+
+### Required only for cloud backup/sync
 - `FIREBASE_STORAGE_BUCKET`
-- `GOOGLE_WEB_CLIENT_ID` — Firebase/Google OAuth Web client ID used by Credential Manager
+
+### Other existing integrations
 - `FACEBOOK_APP_ID`
 - `FACEBOOK_CLIENT_TOKEN`
 - `SPOTIFY_CLIENT_ID`
-- `LASTFM_API_KEY` — app-level Last.fm key so a brand-new user can discover outside the bundled seeds
+- `LASTFM_API_KEY`
 
-The Android app initializes Firebase from BuildConfig, so `google-services.json` is not required by this project layout.
+The Android app currently initializes Firebase from `BuildConfig` values so the existing GitHub Actions environment-based build remains supported.
 
-## 3. Provider setup
-### Google
-1. Register Android package `jp.metaranai.app` in Firebase/Google Cloud.
-2. Register SHA-1 and SHA-256 from the stable release signing certificate.
-3. Enable Google Authentication in Firebase.
-4. Put the Web OAuth client ID in `GOOGLE_WEB_CLIENT_ID`.
-5. V0.9.0 uses Android Credential Manager -> Google ID token -> Firebase Auth. Do not route Google through generic OAuthProvider.
+## 3. Google — primary Android login
+1. Register package `jp.metaranai.app` in Firebase / Google Cloud.
+2. Register the SHA-1 and SHA-256 fingerprints for the signing key used by the installed APK.
+3. Enable Google in Firebase Authentication.
+4. Set the project's Web OAuth client ID as `GOOGLE_WEB_CLIENT_ID`.
+5. Rebuild the APK after changing GitHub Actions secrets.
 
+V0.9.3 flow:
+
+```text
+Googleで続ける
+  -> Android Credential Manager
+  -> Google ID token
+  -> GoogleAuthProvider
+  -> FirebaseAuth.signInWithCredential
+  -> Firebase UID
+```
+
+## 4. Email / Password — fallback login
+Enable Email/Password in Firebase Authentication.
+
+New registration flow:
+
+```text
+createUserWithEmailAndPassword
+  -> sendEmailVerification
+  -> sign out unverified session
+  -> user opens verification link
+  -> user logs in again
+```
+
+V0.9.3 does not accept an unverified Email/Password account as a normal signed-in account. If an unverified user attempts login, the app tries to resend the verification email.
+
+## 5. Guest
+If Firebase Authentication is configured and Anonymous is enabled, guest uses Firebase Anonymous Auth.
+
+If Firebase is not configured, the existing local-only guest fallback remains available.
+
+## 6. Optional providers
 ### Apple
-Enable Sign in with Apple in Apple Developer and Firebase Authentication. Android uses Firebase's `apple.com` OAuth provider flow. iOS release wiring still needs the Apple/Firebase SDK configuration in Xcode.
+Enable Sign in with Apple in Apple Developer and Firebase Authentication. Android can use Firebase's `apple.com` OAuth provider flow. Native iOS Firebase account wiring is a separate release task.
 
 ### Facebook
 1. Create a Meta app and enable Facebook Login.
 2. Add package `jp.metaranai.app` and the release key hash.
 3. Configure Firebase Facebook provider with Meta App ID/App Secret.
-4. Set `FACEBOOK_APP_ID` and `FACEBOOK_CLIENT_TOKEN` for the Android build.
-5. V0.9.0 Android uses the Meta Facebook Login SDK access token -> `FacebookAuthProvider` -> Firebase Auth.
+4. Set `FACEBOOK_APP_ID` and `FACEBOOK_CLIENT_TOKEN`.
 
-### X
-Create an X developer application, configure Firebase's callback URL, enable Twitter/X in Firebase and configure its API key/secret. Android uses Firebase `twitter.com` OAuthProvider.
+### X / Twitter
+Create an X developer application, configure Firebase's callback URL, and enable Twitter/X in Firebase Authentication.
 
-### Email / Guest
-Enable Email/Password and Anonymous in Firebase Authentication. Guest also has a local-only fallback when Firebase is not configured.
+## 7. Cloud data model
+Cloud portable state is stored at:
 
-## 4. Cloud data model
-Portable state is stored at:
 `users/{firebaseUid}/metaranai-backup.json`
 
-Firestore stores lightweight metadata. Cloud JSON intentionally removes Spotify access/refresh tokens and local guest account IDs. Manual JSON Backup/Restore remains independent of cloud sync.
+Firestore stores lightweight backup metadata.
 
-## 5. Existing-user migration — NEVER AUTO OVERWRITE
-V0.9.0 does not clear existing local data. On first authenticated login:
-- cloud data + local data: prompt the user to choose which wins;
+Cloud JSON intentionally omits Spotify access/refresh tokens and local guest account IDs. Manual JSON Backup/Restore remains independent of cloud sync.
+
+If `FIREBASE_STORAGE_BUCKET` is missing, authentication still works but upload/download controls are disabled.
+
+## 8. Existing-user migration — NEVER AUTO OVERWRITE
+On first authenticated login when cloud sync is enabled:
+- cloud data + local data: prompt which copy wins;
 - cloud only: restore cloud data;
-- local only: ask before uploading the existing data to the new account;
-- neither: start new-user onboarding.
+- local only: ask before uploading local data;
+- neither: continue new-user onboarding.
 
-Old V0.5/V0.6/V0.7/V0.8 JSON backup versions remain importable and rebuilding the SQLite archive from `external_artists` remains part of restore.
+When Storage is not configured, V0.9.3 does not attempt this cloud migration step.
 
-## 6. New-user personalization
-New installs use a neutral 0.50 MetalVector. They must build the initial DNA with either:
-- Spotify listening analysis; or
-- one or more Genre Lens selections.
+## 9. Release verification
+Before public release, verify:
+- Google login on the release-signed APK;
+- Email registration -> verification email -> login;
+- Google/Email login with no `FIREBASE_STORAGE_BUCKET`;
+- cloud upload/restore when Storage is configured;
+- sign-out/sign-in;
+- account deletion;
+- Firebase Security Rules;
+- stable signing SHA fingerprints.
 
-Genre onboarding uses `GenreLensCatalog.vectorFor(...)`, not the old bundled artist catalogue. This prevents the historical melodic/power-heavy seed from becoming every new user's DNA.
+Also run:
 
-## 7. Release verification
-Before public release, verify every enabled provider, sign-out/sign-in, second-device restore, V0.6.x JSON migration, account deletion, Firebase Security Rules, and the stable signing fingerprints. Also run the permanent Yutaro Abe's ASTRAL WIND Spotify identity regression.
+```bash
+python tools/check_v093_auth.py
+```
+
+For a focused V0.9.3 checklist, see `docs/20_V093_AUTH_SETUP.md`.

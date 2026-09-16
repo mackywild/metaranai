@@ -36,7 +36,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _cloudConflictPending = MutableStateFlow(false)
     val cloudConflictPending: StateFlow<Boolean> = _cloudConflictPending
     private var pendingCloudJson: String? = null
-    val cloudConfigured: Boolean get() = accounts.configured
+    val authConfigured: Boolean get() = accounts.authConfigured
+    val googleConfigured: Boolean get() = accounts.googleConfigured
+    val cloudConfigured: Boolean get() = accounts.cloudSyncConfigured
 
     private val _profile = MutableStateFlow(store.loadProfile())
     val profile: StateFlow<MetalVector> = _profile
@@ -511,6 +513,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun handleAccountResult(result: Result<AccountSession>) {
         result.onSuccess { session ->
             _account.value = session
+
+            // V0.9.3: Authentication is independent from Firebase Storage.
+            // A valid Google/Email login must not fail just because cloud backup is not configured.
+            if (!accounts.cloudSyncConfigured) {
+                _accountStatus.value = "${session.provider}でログインしました（クラウド同期は未設定）"
+                return@onSuccess
+            }
+
             _accountStatus.value = "${session.provider}でログインしました"
             accounts.downloadState(session) { remote -> viewModelScope.launch {
                 remote.onSuccess { json ->
@@ -853,7 +863,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun scheduleCloudSync() {
-        if (!accounts.configured || _account.value == null) return
+        if (!accounts.cloudSyncConfigured || _account.value == null) return
         cloudSyncJob?.cancel()
         cloudSyncJob = viewModelScope.launch {
             delay(1200)
