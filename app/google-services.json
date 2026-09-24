@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "961168171341",
+    "project_id": "metalarai",
+    "storage_bucket": "metalarai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:961168171341:android:22ccfb9fa60a935d24d704",
+        "android_client_info": {
+          "package_name": "jp.metaranai.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAeqsKjj447aysmE9XqnlHL9hhM-8sHmvw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
