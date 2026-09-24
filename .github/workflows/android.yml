@@ -1,4 +1,4 @@
-name: Android APK
+name: Android APK / AAB
 
 on:
   workflow_dispatch:
@@ -62,7 +62,7 @@ jobs:
             | base64 --decode \
             > "$GITHUB_WORKSPACE/metaranai-release.jks"
 
-      - name: Build signed release APK
+      - name: Build signed release APK and AAB
         if: env.HAS_SIGNING_KEY == 'true'
         env:
           METARANAI_KEYSTORE_PATH: ${{ github.workspace }}/metaranai-release.jks
@@ -81,7 +81,7 @@ jobs:
 
           FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
           FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
-        run: gradle :app:assembleRelease
+        run: gradle :app:assembleRelease :app:bundleRelease
 
       - name: Build debug APK fallback
         if: env.HAS_SIGNING_KEY != 'true'
@@ -104,4 +104,12 @@ jobs:
         with:
           name: metaranai-v0.9.3-apk
           path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Upload AAB
+        if: env.HAS_SIGNING_KEY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: metaranai-v0.9.3-aab
+          path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
