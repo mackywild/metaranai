@@ -37,12 +37,12 @@ data class AccountSession(
 /**
  * V0.9.3 account gateway.
  *
- * Authentication and Cloud Storage are intentionally configured independently:
- * Email/Google/Firebase Auth only require API key + Firebase app id + project id.
- * FIREBASE_STORAGE_BUCKET is required only for cloud backup/sync.
+ * Firebase's standard Android setup (app/google-services.json + Google services
+ * Gradle plugin) is the primary configuration source. The previous BuildConfig
+ * environment values remain as a compatibility fallback for existing CI builds.
  *
- * Firebase is initialized from BuildConfig values so the existing GitHub Actions
- * secret/environment based release flow remains compatible.
+ * Authentication and Cloud Storage are intentionally independent: Storage being
+ * unavailable must never block Google or Email/Password authentication.
  */
 class AccountManager(private val context: Context, private val store: LocalStore) {
     private var app: FirebaseApp? = null
@@ -51,42 +51,71 @@ class AccountManager(private val context: Context, private val store: LocalStore
     private var storage: FirebaseStorage? = null
     private val facebookCallbackManager: CallbackManager = CallbackManager.Factory.create()
 
-    val authConfigured: Boolean
-        get() = BuildConfig.FIREBASE_API_KEY.isNotBlank() &&
+    private fun legacyFirebaseConfigured(): Boolean =
+        BuildConfig.FIREBASE_API_KEY.isNotBlank() &&
             BuildConfig.FIREBASE_APP_ID.isNotBlank() &&
             BuildConfig.FIREBASE_PROJECT_ID.isNotBlank()
+
+    private fun generatedWebClientId(): String {
+        val resourceId = context.resources.getIdentifier(
+            "default_web_client_id",
+            "string",
+            context.packageName
+        )
+        if (resourceId != 0) {
+            val value = runCatching { context.getString(resourceId).trim() }.getOrDefault("")
+            if (value.isNotBlank()) return value
+        }
+        return BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
+    }
+
+    val authConfigured: Boolean get() = auth != null
 
     /** Backward-compatible alias used by older code/tests. It now means Auth is configured. */
     val configured: Boolean get() = authConfigured
 
-    val storageConfigured: Boolean
-        get() = authConfigured && BuildConfig.FIREBASE_STORAGE_BUCKET.isNotBlank()
+    val storageConfigured: Boolean get() = storage != null
 
     val cloudSyncConfigured: Boolean get() = storageConfigured
 
     val googleConfigured: Boolean
-        get() = authConfigured && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
+        get() = authConfigured && generatedWebClientId().isNotBlank()
 
     init {
-        if (authConfigured) runCatching {
-            val existing = FirebaseApp.getApps(context).firstOrNull { it.name == "metaranai" }
-            app = existing ?: run {
-                val options = FirebaseOptions.Builder()
-                    .setApiKey(BuildConfig.FIREBASE_API_KEY)
-                    .setApplicationId(BuildConfig.FIREBASE_APP_ID)
-                    .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
-                    .apply {
-                        if (BuildConfig.FIREBASE_STORAGE_BUCKET.isNotBlank()) {
-                            setStorageBucket(BuildConfig.FIREBASE_STORAGE_BUCKET)
+        runCatching {
+            // Preferred path: FirebaseInitProvider / google-services resources.
+            val defaultApp = FirebaseApp.getApps(context)
+                .firstOrNull { it.name == FirebaseApp.DEFAULT_APP_NAME }
+                ?: FirebaseApp.initializeApp(context)
+
+            // Compatibility path for older CI builds that still inject BuildConfig values.
+            app = defaultApp ?: if (legacyFirebaseConfigured()) {
+                val existingLegacy = FirebaseApp.getApps(context).firstOrNull { it.name == "metaranai" }
+                existingLegacy ?: FirebaseApp.initializeApp(
+                    context,
+                    FirebaseOptions.Builder()
+                        .setApiKey(BuildConfig.FIREBASE_API_KEY)
+                        .setApplicationId(BuildConfig.FIREBASE_APP_ID)
+                        .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
+                        .apply {
+                            if (BuildConfig.FIREBASE_STORAGE_BUCKET.isNotBlank()) {
+                                setStorageBucket(BuildConfig.FIREBASE_STORAGE_BUCKET)
+                            }
                         }
-                    }
-                    .build()
-                FirebaseApp.initializeApp(context, options, "metaranai")
+                        .build(),
+                    "metaranai"
+                )
+            } else {
+                null
             }
 
-            auth = FirebaseAuth.getInstance(app!!).also { it.useAppLanguage() }
-            db = FirebaseFirestore.getInstance(app!!)
-            if (storageConfigured) storage = FirebaseStorage.getInstance(app!!)
+            val firebaseApp = app ?: return@runCatching
+            auth = FirebaseAuth.getInstance(firebaseApp).also { it.useAppLanguage() }
+            db = FirebaseFirestore.getInstance(firebaseApp)
+
+            if (!firebaseApp.options.storageBucket.isNullOrBlank()) {
+                storage = runCatching { FirebaseStorage.getInstance(firebaseApp) }.getOrNull()
+            }
         }
     }
 
@@ -122,7 +151,7 @@ class AccountManager(private val context: Context, private val store: LocalStore
      */
     fun signInEmail(email: String, password: String, create: Boolean, done: (Result<AccountSession>) -> Unit) {
         if (!authConfigured) {
-            done(Result.failure(IllegalStateException("Firebase Authenticationが未設定です。FIREBASE_API_KEY / FIREBASE_APP_ID / FIREBASE_PROJECT_IDを設定してください")))
+            done(Result.failure(IllegalStateException("Firebase Authenticationが未設定です。app/google-services.json とFirebase設定を確認してください")))
             return
         }
 
@@ -203,13 +232,14 @@ class AccountManager(private val context: Context, private val store: LocalStore
     /** Explicit Google button -> Credential Manager -> Google ID token -> Firebase credential. */
     suspend fun signInGoogle(activity: Activity): Result<AccountSession> = runCatching {
         if (!authConfigured) {
-            error("Google認証にはFirebase Authentication設定が必要です")
+            error("Firebase Authenticationが未設定です。app/google-services.json を確認してください")
         }
-        if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
-            error("Google認証にはGOOGLE_WEB_CLIENT_IDが必要です")
+        val webClientId = generatedWebClientId()
+        if (webClientId.isBlank()) {
+            error("Google認証用Web Client IDが未設定です。FirebaseでGoogleログインを有効化し、google-services.jsonを再取得してください")
         }
 
-        val option = GetSignInWithGoogleOption.Builder(BuildConfig.GOOGLE_WEB_CLIENT_ID).build()
+        val option = GetSignInWithGoogleOption.Builder(webClientId).build()
         val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
         val response = CredentialManager.create(activity).getCredential(activity, request)
         val credential = response.credential
