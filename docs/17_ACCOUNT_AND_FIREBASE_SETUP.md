@@ -19,34 +19,38 @@ The important rule is:
 5. Enable Cloud Firestore and Cloud Storage only when cloud backup/sync is required.
 6. Deploy `firebase/firestore.rules` and `firebase/storage.rules` before enabling production cloud sync.
 
-## 2. Android build values
-Set these as GitHub Actions repository secrets or equivalent environment variables.
+## 2. Android Firebase configuration
+The primary Android configuration is the Firebase standard setup:
 
-### Required for Firebase Authentication
+1. Keep the downloaded Firebase config at `app/google-services.json`.
+2. The project-level Gradle build declares `com.google.gms.google-services`.
+3. The app module applies `com.google.gms.google-services`.
+4. Firebase initializes from the generated Android resources at runtime.
+
+The existing BuildConfig environment values remain supported only as a compatibility fallback for old CI/release setups:
+
 - `FIREBASE_API_KEY`
 - `FIREBASE_APP_ID`
 - `FIREBASE_PROJECT_ID`
-
-### Required for Google login
-- `GOOGLE_WEB_CLIENT_ID` — the Web OAuth client ID used as the server client ID by Android Credential Manager. Do not use the Android OAuth client ID here.
-
-### Required only for cloud backup/sync
 - `FIREBASE_STORAGE_BUCKET`
+- `GOOGLE_WEB_CLIENT_ID`
 
-### Other existing integrations
+Other existing integrations still use their environment values:
+
 - `FACEBOOK_APP_ID`
 - `FACEBOOK_CLIENT_TOKEN`
 - `SPOTIFY_CLIENT_ID`
 - `LASTFM_API_KEY`
 
-The Android app currently initializes Firebase from `BuildConfig` values so the existing GitHub Actions environment-based build remains supported.
+Important: after enabling Google Authentication and registering the release / Play App Signing SHA fingerprints, download `google-services.json` again and replace `app/google-services.json`. The refreshed file contains the OAuth Web client used by Credential Manager.
 
 ## 3. Google — primary Android login
 1. Register package `jp.metaranai.app` in Firebase / Google Cloud.
-2. Register the SHA-1 and SHA-256 fingerprints for the signing key used by the installed APK.
+2. Register the SHA-1 and SHA-256 fingerprints for every signing certificate you use, especially the Google Play **App signing key**.
 3. Enable Google in Firebase Authentication.
-4. Set the project's Web OAuth client ID as `GOOGLE_WEB_CLIENT_ID`.
-5. Rebuild the APK after changing GitHub Actions secrets.
+4. Download the updated `google-services.json` and replace `app/google-services.json`.
+5. The app reads the generated `default_web_client_id` first. `GOOGLE_WEB_CLIENT_ID` is retained only as a compatibility fallback.
+6. Rebuild and verify Google login using the Play internal-test installation.
 
 V0.9.3 flow:
 
@@ -113,6 +117,22 @@ On first authenticated login when cloud sync is enabled:
 When Storage is not configured, V0.9.3 does not attempt this cloud migration step.
 
 ## 9. Release verification
+## 9. Google Play AAB / signing
+GitHub Actions always runs `:app:bundleRelease`.
+
+- With the four `METARANAI_KEY*` repository secrets, the workflow publishes `metaranai-v0.9.3-aab`. This is the Play-uploadable signed bundle.
+- Without those signing secrets, the workflow still publishes `metaranai-v0.9.3-aab-unsigned` for build verification only. **Do not upload the unsigned bundle to Google Play.**
+
+Required signing secrets:
+
+- `METARANAI_KEYSTORE_B64`
+- `METARANAI_KEYSTORE_PASSWORD`
+- `METARANAI_KEY_ALIAS`
+- `METARANAI_KEY_PASSWORD`
+
+After the first signed AAB is accepted by Play Console, copy the Play App Signing SHA-1 / SHA-256 into the Firebase Android app settings, enable Google sign-in, then re-download `google-services.json`.
+
+## 10. Release verification
 Before public release, verify:
 - Google login on the release-signed APK;
 - Email registration -> verification email -> login;
