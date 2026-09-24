@@ -83,7 +83,7 @@ jobs:
           FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
         run: gradle :app:assembleRelease :app:bundleRelease
 
-      - name: Build debug APK fallback
+      - name: Build debug APK and unsigned release AAB fallback
         if: env.HAS_SIGNING_KEY != 'true'
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
@@ -97,7 +97,15 @@ jobs:
 
           FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
           FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
-        run: gradle :app:assembleDebug
+        run: gradle :app:assembleDebug :app:bundleRelease
+
+      - name: Warn when AAB is unsigned
+        if: env.HAS_SIGNING_KEY != 'true'
+        run: |
+          echo "::warning::METARANAI_KEYSTORE_B64 is not configured. The generated AAB is unsigned and cannot be uploaded to Google Play. Configure the four METARANAI_KEY* repository secrets for a Play-uploadable AAB."
+          echo "### Play Store signing required" >> "$GITHUB_STEP_SUMMARY"
+          echo "An unsigned AAB was generated for build verification only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Configure METARANAI_KEYSTORE_B64, METARANAI_KEYSTORE_PASSWORD, METARANAI_KEY_ALIAS and METARANAI_KEY_PASSWORD to generate the signed Play Store AAB." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -106,10 +114,18 @@ jobs:
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
-      - name: Upload AAB
+      - name: Upload signed AAB
         if: env.HAS_SIGNING_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: metaranai-v0.9.3-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+      - name: Upload unsigned AAB for verification
+        if: env.HAS_SIGNING_KEY != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: metaranai-v0.9.3-aab-unsigned
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
