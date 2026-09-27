@@ -12,7 +12,20 @@
           "package_name": "jp.metaranai.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "961168171341-2bcv70ii5h02kl725j99fm14uumk8q3o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "jp.metaranai.app",
+            "certificate_hash": "18de709f91630ca3b5ab62c1cee579fb446a22d4"
+          }
+        },
+        {
+          "client_id": "961168171341-iifena8kuh17gcg0nsplhqj080ug2756.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAeqsKjj447aysmE9XqnlHL9hhM-8sHmvw"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "961168171341-iifena8kuh17gcg0nsplhqj080ug2756.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
