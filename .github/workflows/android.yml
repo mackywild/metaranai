@@ -39,6 +39,7 @@ jobs:
       - name: Run Metaranai regression checks
         run: |
           python tools/check_update_compat.py
+          python tools/check_release_metadata.py
           python tools/check_v052_genre_lens.py
           python tools/check_v053_genre_lens.py
           python tools/check_v054_unrated_refill.py
