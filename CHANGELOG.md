@@ -1,5 +1,13 @@
 # Changelog
 
+## V0.9.4 — PLAY AUTH DISTRIBUTION
+- Google Play App Signing用の本番SHA登録後に再取得した `google-services.json` を反映。
+- AndroidのGoogleログインでFirebase標準構成のOAuth Web Clientを利用できる状態を配布ビルドへ反映。
+- Google Play内部テストへ再投入できるようAndroid `versionCode` を22へ更新。
+- Android `versionName` を0.9.4へ更新。
+- GitHub ActionsのAPK / AAB artifact名をv0.9.4へ更新。
+- iOS側のバージョンはこの変更では更新しない。
+
 ## V0.9.3 — AUTHENTICATION RELIABILITY
 - Androidの主力ログインをGoogle（Credential Manager -> Google ID token -> Firebase Auth）として明確化。
 - Firebase AuthenticationとFirebase Storageの設定判定を分離。`FIREBASE_STORAGE_BUCKET`未設定でもGoogle / Email認証できるよう修正。

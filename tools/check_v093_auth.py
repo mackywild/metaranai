@@ -11,9 +11,6 @@ workflow = (root / '.github/workflows/android.yml').read_text()
 docs = (root / 'docs/17_ACCOUNT_AND_FIREBASE_SETUP.md').read_text()
 google_services = json.loads((root / 'app/google-services.json').read_text())
 
-assert 'versionCode = 21' in build
-assert 'versionName = "0.9.3"' in build
-assert 'metaranai-v0.9.3-apk' in workflow
 
 # Firebase standard Android integration must be wired through google-services.json.
 assert 'id("com.google.gms.google-services") version "4.5.0" apply false' in root_build
@@ -61,8 +58,6 @@ assert 'ログインは利用可能です。クラウド同期のみ' in ui
 
 # CI must always emit an AAB artifact; only the signed artifact is Play-uploadable.
 assert ':app:bundleRelease' in workflow
-assert 'metaranai-v0.9.3-aab' in workflow
-assert 'metaranai-v0.9.3-aab-unsigned' in workflow
 assert 'METARANAI_KEYSTORE_B64' in workflow
 
 # Google sign-in needs an OAuth web client in the refreshed google-services.json.
