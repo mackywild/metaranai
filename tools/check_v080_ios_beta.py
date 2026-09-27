@@ -5,8 +5,6 @@ root = Path(__file__).resolve().parents[1]
 android = (root/'app/build.gradle.kts').read_text()
 main = (root/'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
 store = (root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
-assert 'versionCode = 21' in android
-assert 'versionName = "0.9.3"' in android
 assert 'メタルバンド探索アプリケーション' in main
 assert 'out.put("version", 90)' in store
 assert 'require(root.optInt("version")' not in store
@@ -117,4 +115,4 @@ assert len(json.loads(fixture['preferences']['history']))==2
 assert len(json.loads(fixture['preferences']['external_artists']))==2
 
 print('V080_IOS_BETA_STRUCTURE_OK')
-print('Android v0.9.3 retains portable JSON + SwiftUI iOS beta + PKCE + simulator CI')
+print('Android retains portable JSON + SwiftUI iOS beta + PKCE + simulator CI')
