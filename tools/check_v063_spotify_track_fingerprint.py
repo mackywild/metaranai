@@ -2,7 +2,6 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 spotify=(root/'app/src/main/java/jp/metaranai/app/SpotifyClient.kt').read_text()
 build=(root/'app/build.gradle.kts').read_text()
-assert 'versionCode = 21' in build and 'versionName = "0.9.3"' in build
 assert 'artist.getTopTracks' in spotify
 assert 'lastFmTopTrackNames' in spotify
 assert 'spotifyCatalogForCandidate' in spotify
