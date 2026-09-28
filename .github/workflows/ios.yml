@@ -2,6 +2,8 @@ name: iOS Beta Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ main ]
   push:
     branches: [ main ]
 
@@ -46,6 +48,7 @@ jobs:
           python tools/check_v0911_auto_dna.py
 
   ios-simulator:
+    if: github.event_name != 'pull_request'
     runs-on: macos-15
     needs: swift-core
     steps:
