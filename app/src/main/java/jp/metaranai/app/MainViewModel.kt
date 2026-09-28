@@ -650,7 +650,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _history.value = store.loadHistory()
         _dnaName.value = store.generatedDnaName()
         _dnaLearningChangeCount.value = store.dnaLearningChangeCount().coerceIn(0, dnaRegenerationInterval - 1)
-        if (_dnaName.value.isBlank()) regenerateDnaName(resetCounter = false)
+        if (_dnaName.value.isBlank() || store.dnaNameGeneratorVersion() < DnaNameGenerator.VERSION) {
+            regenerateDnaName(resetCounter = false)
+        }
         _searchHistory.value = store.loadSearchHistory()
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
