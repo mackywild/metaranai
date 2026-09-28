@@ -1,5 +1,15 @@
 # Changelog
 
+## V0.9.5 — DNA NAME INFERENCE
+- DNA自動命名を固定しきい値7分類から、8軸パラメータの順位・強度・組み合わせを推論する動的ジェネレータへ変更。
+- 上位2軸の組み合わせ28パターン、DNAの偏り方、3番手アクセント、推定メタルタイプ、聴取傾向、Vo傾向を組み合わせて命名バリエーションを大幅拡張。
+- DNA名の再生成タイミングは従来どおり「学習によるDNA変化5回ごと」を維持。
+- V0.9.5初回起動時は旧命名方式で保存されたDNA名を一度だけ新ジェネレータで再推論。学習カウンタは維持。
+- 旧バックアップ復元時も新ジェネレータでDNA名を再推論できるよう移行情報を追加。
+- Android / iOSで同じ命名推論ルールを実装。
+- Android unit testとiOS core testで、複数DNAプロファイルから異なる名称が生成されること、5回目で再生成判定になることを確認。
+- Android versionCode 23 / versionName 0.9.5。iOSの配布バージョン番号はこの変更では据え置き。
+
 ## V0.9.4 — PLAY AUTH DISTRIBUTION
 - Google Play App Signing用の本番SHA登録後に再取得した `google-services.json` を反映。
 - AndroidのGoogleログインでFirebase標準構成のOAuth Web Clientを利用できる状態を配布ビルドへ反映。
