@@ -17,6 +17,7 @@ jobs:
             iosApp/MetaranaiIOS/Core/PortableBackup.swift \
             iosApp/MetaranaiIOS/Core/MetalDataParser.swift \
             iosApp/MetaranaiIOS/Core/GenreLensCore.swift \
+            iosApp/MetaranaiIOS/Core/DNANameGenerator.swift \
             iosApp/MetaranaiIOS/Core/RecommendationCore.swift \
             iosApp/MetaranaiIOS/Core/SeedCatalog.swift \
             iosApp/MetaranaiIOS/Core/CatalogFingerprint.swift \
