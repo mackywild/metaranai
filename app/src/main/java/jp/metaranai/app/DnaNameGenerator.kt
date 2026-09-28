@@ -136,5 +136,5 @@ object DnaNameGenerator {
         }
     }
 
-    private fun average(vararg values: Float): Float = values.sum() / values.size.coerceAtLeast(1)
+    private fun average(vararg values: Float): Float = values.sum() / values.size.coerceAtLeast(1).toFloat()
 }
