@@ -35,6 +35,29 @@ expect(rec?.artist.name == "Underground Thrash", "strict recommendation must sta
 let updated = RecommendationCore.updatedProfile(current: profile, artist: artists[1], reaction: .hit)
 expect(updated != profile, "rating updates DNA")
 
+let neutralDNA = MetalVector(
+    melody: 0.5, speed: 0.5, heavy: 0.5, symphonic: 0.5,
+    technical: 0.5, growl: 0.5, cleanVocal: 0.5, catchy: 0.5
+)
+expect(
+    DNANameGenerator.generate(profile: neutralDNA, vocal: VocalProfile(), history: []) == "均衡探索型・オールラウンドメタラー",
+    "neutral DNA should use balanced explorer name"
+)
+let dnaProfiles = [
+    MetalVector(melody: 0.92, speed: 0.88, heavy: 0.35, symphonic: 0.55, technical: 0.40, growl: 0.20, cleanVocal: 0.72, catchy: 0.70),
+    MetalVector(melody: 0.35, speed: 0.45, heavy: 0.94, symphonic: 0.40, technical: 0.55, growl: 0.91, cleanVocal: 0.20, catchy: 0.30),
+    MetalVector(melody: 0.70, speed: 0.45, heavy: 0.40, symphonic: 0.93, technical: 0.62, growl: 0.20, cleanVocal: 0.89, catchy: 0.68),
+    MetalVector(melody: 0.45, speed: 0.66, heavy: 0.82, symphonic: 0.70, technical: 0.95, growl: 0.32, cleanVocal: 0.38, catchy: 0.42),
+    MetalVector(melody: 0.72, speed: 0.48, heavy: 0.30, symphonic: 0.44, technical: 0.35, growl: 0.16, cleanVocal: 0.91, catchy: 0.88),
+    MetalVector(melody: 0.48, speed: 0.92, heavy: 0.48, symphonic: 0.55, technical: 0.90, growl: 0.32, cleanVocal: 0.40, catchy: 0.57),
+    MetalVector(melody: 0.90, speed: 0.52, heavy: 0.35, symphonic: 0.89, technical: 0.58, growl: 0.18, cleanVocal: 0.73, catchy: 0.65),
+    MetalVector(melody: 0.42, speed: 0.90, heavy: 0.84, symphonic: 0.36, technical: 0.48, growl: 0.78, cleanVocal: 0.25, catchy: 0.40)
+]
+let dnaNames = Set(dnaProfiles.map { DNANameGenerator.generate(profile: $0, vocal: VocalProfile(), history: []) })
+expect(dnaNames.count >= 7, "DNA parameter inference should produce broad naming variation")
+expect(DNANamePolicy.shouldRegenerate(nextChangeCount: 4) == false, "DNA name should not regenerate before fifth change")
+expect(DNANamePolicy.shouldRegenerate(nextChangeCount: 5) == true, "DNA name should regenerate on fifth change")
+
 let suite = "MetaranaiV090CoreTests-\(UUID().uuidString)"
 guard let defaults = UserDefaults(suiteName: suite) else { fatalError("defaults") }
 defaults.removePersistentDomain(forName: suite)

@@ -37,6 +37,8 @@ class LocalStore(context: Context) {
     fun saveGeneratedDnaName(value: String) = prefs.edit().putString("dna_generated_name_v0911", value).apply()
     fun dnaLearningChangeCount(): Int = prefs.getInt("dna_learning_change_count_v0911", 0)
     fun saveDnaLearningChangeCount(value: Int) = prefs.edit().putInt("dna_learning_change_count_v0911", value.coerceAtLeast(0)).apply()
+    fun dnaNameGeneratorVersion(): Int = prefs.getInt("dna_name_generator_version_v095", 0)
+    fun saveDnaNameGeneratorVersion(value: Int) = prefs.edit().putInt("dna_name_generator_version_v095", value.coerceAtLeast(0)).apply()
 
     fun loadHistory(): List<DiscoveryRecord> {
         val raw = prefs.getString("history", "[]") ?: "[]"
@@ -479,6 +481,9 @@ class LocalStore(context: Context) {
         // Deliberately do NOT require a specific version. V0.5-V0.6.x JSON backups remain valid.
         val o = root.getJSONObject("preferences")
         val e = prefs.edit()
+        if (!o.has("dna_name_generator_version_v095")) {
+            e.putInt("dna_name_generator_version_v095", 0)
+        }
         o.keys().forEach { key ->
             when (val value = o.get(key)) {
                 is String -> e.putString(key, value)

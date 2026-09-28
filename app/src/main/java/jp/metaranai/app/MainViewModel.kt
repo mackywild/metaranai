@@ -19,7 +19,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // V0.7.0: Reforge UI + SQLite archive mirror while keeping legacy JSON backup compatibility.
     private val minimumUnratedLensPoolPerGenre = 10
     private val refillTargetUnratedLensPoolPerGenre = 20
-    private val dnaRegenerationInterval = 5
+    private val dnaRegenerationInterval = DnaNamePolicy.REGENERATION_INTERVAL
     private val engine = RecommendationEngine()
     private val spotify = SpotifyClient(app, store)
     private val externalDiscovery = ExternalDiscoveryClient(store)
@@ -109,7 +109,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var cloudSyncJob: Job? = null
 
     init {
-        if (_onboardingComplete.value && _dnaName.value.isBlank()) {
+        if (_onboardingComplete.value && (
+                _dnaName.value.isBlank() ||
+                    store.dnaNameGeneratorVersion() < DnaNameGenerator.VERSION
+            )) {
             regenerateDnaName(resetCounter = false)
         }
         if (store.hasPersonalData() && !store.onboardingCompleted()) {
@@ -647,7 +650,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _history.value = store.loadHistory()
         _dnaName.value = store.generatedDnaName()
         _dnaLearningChangeCount.value = store.dnaLearningChangeCount().coerceIn(0, dnaRegenerationInterval - 1)
-        if (_dnaName.value.isBlank()) regenerateDnaName(resetCounter = false)
+        if (_dnaName.value.isBlank() || store.dnaNameGeneratorVersion() < DnaNameGenerator.VERSION) {
+            regenerateDnaName(resetCounter = false)
+        }
         _searchHistory.value = store.loadSearchHistory()
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
@@ -844,7 +849,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val next = _dnaLearningChangeCount.value + 1
-        if (next >= dnaRegenerationInterval) {
+        if (DnaNamePolicy.shouldRegenerate(next)) {
             regenerateDnaName()
         } else {
             _dnaLearningChangeCount.value = next
@@ -856,6 +861,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val generated = engine.dnaType(_profile.value, _vocalProfile.value, _history.value)
         _dnaName.value = generated
         store.saveGeneratedDnaName(generated)
+        store.saveDnaNameGeneratorVersion(DnaNameGenerator.VERSION)
         if (resetCounter) {
             _dnaLearningChangeCount.value = 0
             store.saveDnaLearningChangeCount(0)

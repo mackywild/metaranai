@@ -57,6 +57,9 @@ jobs:
           python tools/check_v0911_auto_dna.py
           python tools/check_v093_auth.py
 
+      - name: Run Android unit tests
+        run: gradle :app:testDebugUnitTest
+
       - name: Restore stable signing key
         if: env.HAS_SIGNING_KEY == 'true'
         env:
@@ -114,7 +117,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.4-apk
+          name: metaranai-v0.9.5-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -122,7 +125,7 @@ jobs:
         if: env.HAS_SIGNING_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.4-aab
+          name: metaranai-v0.9.5-aab
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
 
@@ -130,6 +133,6 @@ jobs:
         if: env.HAS_SIGNING_KEY != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.4-aab-unsigned
+          name: metaranai-v0.9.5-aab-unsigned
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error

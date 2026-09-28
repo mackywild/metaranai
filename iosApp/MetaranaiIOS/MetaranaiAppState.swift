@@ -19,7 +19,7 @@ final class MetaranaiAppState: ObservableObject {
     @Published private(set) var generatedDNAName = ""
     @Published private(set) var dnaLearningChangeCount = 0
 
-    private let dnaRegenerationIntervalValue = 5
+    private let dnaRegenerationIntervalValue = DNANamePolicy.regenerationInterval
     let spotifyAuth = SpotifyAuthManager()
     private let defaults: UserDefaults
     private let lastFM = LastFMService()
@@ -61,7 +61,10 @@ final class MetaranaiAppState: ObservableObject {
         vocalProfile = MetalDataParser.vocalProfile(from: defaults.string(forKey: "vocal_profile_v05"))
         generatedDNAName = defaults.string(forKey: "dna_generated_name_v0911") ?? ""
         dnaLearningChangeCount = min(max(defaults.integer(forKey: "dna_learning_change_count_v0911"), 0), dnaRegenerationIntervalValue - 1)
-        if generatedDNAName.isEmpty { regenerateDNAName(resetCounter: false) }
+        let generatorVersion = defaults.integer(forKey: "dna_name_generator_version_v095")
+        if generatedDNAName.isEmpty || generatorVersion < DNANameGenerator.version {
+            regenerateDNAName(resetCounter: false)
+        }
         clientID = defaults.string(forKey: "spotify_client_id") ?? ""
         lastFmAPIKey = defaults.string(forKey: "lastfm_api_key") ?? ""
         recomputeRecommendation()
@@ -94,7 +97,7 @@ final class MetaranaiAppState: ObservableObject {
     private func registerDNALearningChange(before: MetalVector, after: MetalVector) {
         guard before != after else { return }
         let next = dnaLearningChangeCount + 1
-        if next >= dnaRegenerationIntervalValue {
+        if DNANamePolicy.shouldRegenerate(nextChangeCount: next) {
             regenerateDNAName()
         } else {
             dnaLearningChangeCount = next
@@ -105,6 +108,7 @@ final class MetaranaiAppState: ObservableObject {
     private func regenerateDNAName(resetCounter: Bool = true) {
         generatedDNAName = RecommendationCore.dnaType(profile: profile, vocal: vocalProfile, history: history)
         defaults.set(generatedDNAName, forKey: "dna_generated_name_v0911")
+        defaults.set(DNANameGenerator.version, forKey: "dna_name_generator_version_v095")
         if resetCounter {
             dnaLearningChangeCount = 0
             defaults.set(0, forKey: "dna_learning_change_count_v0911")

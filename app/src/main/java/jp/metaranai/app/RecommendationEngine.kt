@@ -92,39 +92,11 @@ class RecommendationEngine {
 
     fun profileFromInterest(current: MetalVector, artist: MetalArtist): MetalVector = current.blend(artist.vector, .025f)
 
-    fun dnaType(v: MetalVector, vocal: VocalProfile = VocalProfile(), history: List<DiscoveryRecord> = emptyList()): String {
-        val melodic = (v.melody + v.catchy + v.cleanVocal) / 3f
-        val base = when {
-            melodic > .88f && v.speed > .78f && v.symphonic > .72f -> "天空疾走型メロディックメタラー"
-            v.symphonic > .86f && v.cleanVocal > .82f -> "劇場型シンフォニックメタラー"
-            v.technical > .82f && v.heavy > .65f -> "技巧偏重型プログレッシブメタラー"
-            v.growl > .62f && v.heavy > .78f -> "極重圧型エクストリームメタラー"
-            v.speed > .82f -> "高速巡航型パワーメタラー"
-            melodic > .82f -> "旋律至上型メロディックメタラー"
-            else -> "探索型オールラウンドメタラー"
-        }
-        val qualifiers = buildList {
-            listeningQualifier(history)?.let(::add)
-            VocalAnalyzer.qualifier(vocal)?.let(::add)
-        }
-        return if (qualifiers.isEmpty()) base else "${qualifiers.joinToString("・")}・$base"
-    }
-
-    private fun listeningQualifier(history: List<DiscoveryRecord>): String? {
-        if (history.size < 8) return null
-        val judged = history.filter { it.reaction != Reaction.NOT_FOUND }
-        if (judged.size < 8) return null
-        val total = judged.size.toFloat()
-        val love = judged.count { it.reaction == Reaction.LOVE_ALL } / total
-        val selective = judged.count { it.reaction == Reaction.SOME } / total
-        val reject = judged.count { it.reaction == Reaction.MEH || it.reaction == Reaction.NO_INTEREST } / total
-        return when {
-            love >= .25f -> "全曲没入型"
-            selective >= .40f -> "選曲発掘型"
-            reject >= .45f -> "厳選審美型"
-            else -> null
-        }
-    }
+    fun dnaType(
+        v: MetalVector,
+        vocal: VocalProfile = VocalProfile(),
+        history: List<DiscoveryRecord> = emptyList()
+    ): String = DnaNameGenerator.generate(v, vocal, history)
 
     private fun explorationScore(profile: MetalVector, artist: MetalVector): Float {
         val similarity = profile.similarity(artist)

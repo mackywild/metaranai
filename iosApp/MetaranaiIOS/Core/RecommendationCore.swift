@@ -77,32 +77,8 @@ enum RecommendationCore {
         }
     }
 
-    static func dnaType(profile v: MetalVector, vocal: VocalProfile, history: [DiscoveryRecord]) -> String {
-        let melodic = (v.melody + v.catchy + v.cleanVocal) / 3
-        let base: String
-        if melodic > 0.88 && v.speed > 0.78 && v.symphonic > 0.72 { base = "天空疾走型メロディックメタラー" }
-        else if v.symphonic > 0.86 && v.cleanVocal > 0.82 { base = "劇場型シンフォニックメタラー" }
-        else if v.technical > 0.82 && v.heavy > 0.65 { base = "技巧偏重型プログレッシブメタラー" }
-        else if v.growl > 0.62 && v.heavy > 0.78 { base = "極重圧型エクストリームメタラー" }
-        else if v.speed > 0.82 { base = "高速巡航型パワーメタラー" }
-        else if melodic > 0.82 { base = "旋律至上型メロディックメタラー" }
-        else { base = "探索型オールラウンドメタラー" }
-
-        var qualifiers: [String] = []
-        if history.count >= 8 {
-            let count = Double(history.count)
-            let love = Double(history.filter { $0.reaction == .loveAll }.count) / count
-            let selective = Double(history.filter { $0.reaction == .some }.count) / count
-            let reject = Double(history.filter { $0.reaction == .meh || $0.reaction == .noInterest }.count) / count
-            if love >= 0.25 { qualifiers.append("全曲没入型") }
-            else if selective >= 0.40 { qualifiers.append("選曲発掘型") }
-            else if reject >= 0.45 { qualifiers.append("厳選審美型") }
-        }
-        if vocal.observations >= 3 {
-            let values = [("男性Vo偏愛", vocal.male), ("女性Vo偏愛", vocal.female), ("混成Vo偏愛", vocal.mixed)]
-            if let best = values.max(by: { $0.1 < $1.1 }), best.1 >= 0.46 { qualifiers.append(best.0) }
-        }
-        return qualifiers.isEmpty ? base : "\(qualifiers.joined(separator: "・"))・\(base)"
+    static func dnaType(profile: MetalVector, vocal: VocalProfile, history: [DiscoveryRecord]) -> String {
+        DNANameGenerator.generate(profile: profile, vocal: vocal, history: history)
     }
 
     private static func explorationScore(profile: MetalVector, artist: MetalVector) -> Double {
