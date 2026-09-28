@@ -76,6 +76,9 @@ enum PortableBackupCodec {
             default: break
             }
         }
+        if payload.preferences["dna_name_generator_version_v095"] == nil {
+            defaults.set(0, forKey: "dna_name_generator_version_v095")
+        }
         defaults.set(Array(importedKeys).sorted(), forKey: "metaranai_imported_keys_v080")
         return payload
     }
