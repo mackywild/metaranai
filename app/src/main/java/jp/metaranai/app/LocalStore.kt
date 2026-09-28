@@ -481,6 +481,9 @@ class LocalStore(context: Context) {
         // Deliberately do NOT require a specific version. V0.5-V0.6.x JSON backups remain valid.
         val o = root.getJSONObject("preferences")
         val e = prefs.edit()
+        if (!o.has("dna_name_generator_version_v095")) {
+            e.putInt("dna_name_generator_version_v095", 0)
+        }
         o.keys().forEach { key ->
             when (val value = o.get(key)) {
                 is String -> e.putString(key, value)
