@@ -147,27 +147,31 @@ private fun HomeScreen(vm: MainViewModel) {
                     Spacer(Modifier.height(18.dp))
                     Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
                     Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
-                    if (rec.artist.source != ArtistSource.BUILTIN) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("🌐 外部発掘  •  発掘度 ${rec.artist.hiddenScore}", color = Acid, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
                     Spacer(Modifier.height(22.dp))
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text("${rec.compatibility}%", color = Acid, fontSize = 34.sp, fontWeight = FontWeight.Black)
-                        Text("  DNA一致度", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
-                    }
-                    Spacer(Modifier.height(18.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SpotifyButton(vm, rec.artist, Modifier.weight(1f))
-                        OutlinedButton(onClick = { vm.openYouTube(rec.artist) }, modifier = Modifier.weight(1f)) { Text("YouTube") }
+                        Button(
+                            onClick = { vm.openYouTube(rec.artist) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFF0000),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("YouTube", color = Color.White)
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { vm.openYouTube(rec.artist, "mv") }, modifier = Modifier.weight(1f)) { Text("MV") }
-                        OutlinedButton(onClick = { vm.openYouTube(rec.artist, "live") }, modifier = Modifier.weight(1f)) { Text("ライブ") }
-                        OutlinedButton(onClick = { vm.deepDive(rec.artist) }, enabled = !deepDiving, modifier = Modifier.weight(1.35f)) { Text(if (deepDiving) "探索中" else "⛏ 深掘り") }
+                    OutlinedButton(
+                        onClick = { vm.deepDive(rec.artist) },
+                        enabled = !deepDiving,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (deepDiving) "探索中" else "⛏ 深掘り")
                     }
-                    if (spotifyOpen.isNotBlank()) Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                    if (spotifyOpen.isNotBlank() && spotifyOpen != "Spotify本人確認済み") {
+                        Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+                    }
                     if (mediaStatus.isNotBlank()) Text(mediaStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別のバンドを見る") }
