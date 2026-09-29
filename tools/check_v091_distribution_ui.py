@@ -10,6 +10,16 @@ assert 'メタルバンド探索アプリケーション' in ui
 assert 'v0.9.1 ·' not in ui
 assert '本日のジャンル:' in ui
 assert '今日のメタル' in ui
+home = ui[ui.index('private fun HomeScreen'):ui.index('private fun ReactionSelector')]
+assert 'DNA一致度' not in home
+assert '🌐 外部発掘' not in home
+assert 'vm.openYouTube(rec.artist, "mv")' not in home
+assert 'vm.openYouTube(rec.artist, "live")' not in home
+assert 'Text("MV")' not in home
+assert 'Text("ライブ")' not in home
+assert 'Color(0xFFFF0000)' in home
+assert 'Text("YouTube", color = Color.White)' in home
+assert 'spotifyOpen != "Spotify本人確認済み"' in home
 assert 'WHY THIS ARTIST?' not in ui
 assert 'vocalFilter' not in ui
 assert 'NOT_FOUND("🔍 見つからなかった"' in models
