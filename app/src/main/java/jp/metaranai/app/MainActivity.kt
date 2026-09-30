@@ -349,7 +349,7 @@ private fun SearchScreen(vm: MainViewModel) {
                 enabled = query.trim().length >= 2 && !remoteSearching,
                 modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
             ) {
-                Text(if (remoteSearching) "世界から検索中…" else "ローカルに無ければ世界から検索")
+                Text(if (remoteSearching) "グローバル検索中…" else "グローバル検索")
             }
 
             if (remoteStatus.isNotBlank()) {
