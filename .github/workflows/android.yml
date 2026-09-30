@@ -118,7 +118,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.7-apk
+          name: metaranai-v0.9.8-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -126,7 +126,7 @@ jobs:
         if: env.HAS_SIGNING_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.7-aab
+          name: metaranai-v0.9.8-aab
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
 
@@ -134,6 +134,6 @@ jobs:
         if: env.HAS_SIGNING_KEY != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.7-aab-unsigned
+          name: metaranai-v0.9.8-aab-unsigned
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
