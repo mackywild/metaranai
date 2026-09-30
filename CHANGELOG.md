@@ -1,5 +1,14 @@
 # Changelog
 
+## V0.10.1 — ARCHIVE UI REFINEMENT
+- 図鑑検索を「探す」と同じ半角スペース区切りAND検索へ統一。
+- 図鑑カードの発掘度 / 新規性を数値表示から5段階の★表示へ変更。
+- 評価履歴は「最終評価」ではなく「評価日時」として表示し、新規評価は時刻まで保存。
+- 当時DNA一致度はデータとして保持したままUIから非表示化。
+- Spotify本人確認済みリンク取得表示を削除。
+- 図鑑カードのYouTubeボタンを赤背景・白文字へ統一。
+- Android versionCode 28 / versionName 0.10.1。
+
 ## V0.9.9 — DNA SCREEN CLEANUP
 - DNA画面の「よく刺さっているジャンル」セクションを廃止し、DNA名と8軸パラメータ表示に集中する構成へ整理。
 - Android versionCode 27 / versionName 0.9.9。
