@@ -176,5 +176,6 @@ data class ArtistSearchResult(
     val fetched: Int,
     val accepted: Int,
     val results: List<MetalArtist>,
+    val suggestions: List<MetalArtist>,
     val cachedArtists: List<MetalArtist>
 )
