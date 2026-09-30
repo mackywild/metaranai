@@ -144,12 +144,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun react(reaction: Reaction) {
         val rec = _recommendation.value
         val today = LocalDate.now().toString()
-        if (_history.value.any { it.artistName.equals(rec.artist.name, true) && it.date == today }) {
+        if (_history.value.any { it.artistName.equals(rec.artist.name, true) && it.date.startsWith(today) }) {
             showReactionStatus("${rec.artist.name} は今日すでに評価済み。未評価候補を探します")
             refreshAfterReaction()
             return
         }
-        val record = DiscoveryRecord(rec.artist.name, today, reaction, rec.compatibility)
+        val evaluatedAt = LocalDateTime.now().withNano(0).toString()
+        val record = DiscoveryRecord(rec.artist.name, evaluatedAt, reaction, rec.compatibility)
         _history.value = listOf(record) + _history.value
         if (reaction != Reaction.NOT_FOUND) {
             val before = _profile.value
@@ -425,7 +426,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val favorites = judged.count { it.reaction == Reaction.LOVE_ALL }
         val positives = judged.count { it.reaction.isPositive }
         val average = if (judged.isEmpty()) 0 else judged.sumOf { it.reaction.affinityScore } / judged.size
-        val dates = h.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet()
+        val dates = h.mapNotNull { row ->
+            runCatching { LocalDateTime.parse(row.date).toLocalDate() }.getOrNull()
+                ?: runCatching { LocalDate.parse(row.date) }.getOrNull()
+        }.toSet()
         var streak = 0
         var d = LocalDate.now()
         while (d in dates) { streak++; d = d.minusDays(1) }
