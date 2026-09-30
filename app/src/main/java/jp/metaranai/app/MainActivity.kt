@@ -584,7 +584,6 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun DnaScreen(vm: MainViewModel) {
     val p by vm.profile.collectAsState()
-    val topGenres = vm.topGenres()
     val metrics = listOf(
         "メロディ重視" to p.melody,
         "疾走感" to p.speed,
@@ -615,14 +614,6 @@ private fun DnaScreen(vm: MainViewModel) {
                     progress = { value },
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                 )
-            }
-        }
-        if (topGenres.isNotEmpty()) item {
-            Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp)) {
-                Text("よく刺さっているジャンル", color = Acid, fontWeight = FontWeight.Bold)
-                topGenres.forEach { (name, score) ->
-                    Text("${GenreLensCatalog.displayName(name)}  $score", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
-                }
             }
         }
     }
