@@ -8,7 +8,7 @@ ui = (root / 'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
 models = (root / 'app/src/main/java/jp/metaranai/app/Models.kt').read_text()
 
 # Query semantics: split on whitespace and require all terms across band/country/genre.
-assert 'split(Regex("\\s+"))' in matcher
+assert r'.split(Regex("\\s+"))' in matcher
 assert 'terms.all' in matcher
 assert 'SearchQueryMatcher.matches(it, q)' in vm
 assert 'SearchQueryMatcher.exactName(it, q)' in vm
