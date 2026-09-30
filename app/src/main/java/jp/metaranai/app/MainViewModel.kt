@@ -77,6 +77,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _remoteSearchResults = MutableStateFlow<List<MetalArtist>>(emptyList())
     val remoteSearchResults: StateFlow<List<MetalArtist>> = _remoteSearchResults
+    private val _remoteSearchSuggestions = MutableStateFlow<List<MetalArtist>>(emptyList())
+    val remoteSearchSuggestions: StateFlow<List<MetalArtist>> = _remoteSearchSuggestions
     private val _remoteSearching = MutableStateFlow(false)
     val remoteSearching: StateFlow<Boolean> = _remoteSearching
     private val _remoteSearchStatus = MutableStateFlow("")
@@ -168,10 +170,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun search(query: String): List<MetalArtist> {
         val q = query.trim()
         val catalog = allArtists()
-        if (q.isBlank()) return catalog.sortedWith(compareByDescending<MetalArtist> { it.hiddenScore }.thenByDescending { it.discovery }).take(24)
-        return catalog.filter {
-            it.name.contains(q, true) || it.country.contains(q, true) || it.genres.any { g -> g.contains(q, true) }
-        }.sortedWith(compareByDescending<MetalArtist> { it.name.startsWith(q, true) }.thenByDescending { it.hiddenScore }).take(40)
+        if (q.isBlank()) return emptyList()
+        return catalog
+            .filter { SearchQueryMatcher.matches(it, q) }
+            .sortedWith(
+                compareByDescending<MetalArtist> { SearchQueryMatcher.exactName(it, q) }
+                    .thenBy { it.name.lowercase() }
+            )
+            .take(40)
     }
 
     fun searchExternal(query: String) {
@@ -187,10 +193,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             externalDiscovery.searchArtists(q).onSuccess { result ->
                 _externalArtists.value = result.cachedArtists
                 _remoteSearchResults.value = result.results
-                _remoteSearchStatus.value = "外部${result.fetched}件 → Metal判定${result.accepted}件 / Local DB ${result.cachedArtists.size}組"
+                _remoteSearchSuggestions.value = result.suggestions
+                _remoteSearchStatus.value = if (result.results.isEmpty() && result.suggestions.isEmpty()) {
+                    "一致する候補が見つかりませんでした"
+                } else {
+                    ""
+                }
                 _recommendation.value = recommendNow()
             }.onFailure {
                 _remoteSearchResults.value = emptyList()
+                _remoteSearchSuggestions.value = emptyList()
                 _remoteSearchStatus.value = "外部検索失敗: ${it.message}"
             }
             _remoteSearching.value = false
@@ -199,6 +211,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearRemoteSearch() {
         _remoteSearchResults.value = emptyList()
+        _remoteSearchSuggestions.value = emptyList()
         _remoteSearchStatus.value = ""
     }
 
