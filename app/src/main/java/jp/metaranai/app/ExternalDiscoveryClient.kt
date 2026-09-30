@@ -150,15 +150,26 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 
             val raw = searchLastFm(key, q, limit.coerceIn(1, 15))
             val alreadyNames = store.loadExternalArtists().map { it.name.lowercase() }.toSet()
-            val accepted = mutableListOf<MetalArtist>()
+            val enriched = mutableListOf<MetalArtist>()
             raw.forEachIndexed { index, candidate ->
                 enrichCandidate(
                     key, candidate.copy(seed = "Search:$q"), musicBrainzAllowed = index < 3,
                     already = candidate.name.lowercase() in alreadyNames
-                )?.let(accepted::add)
+                )?.let(enriched::add)
             }
-            val combined = mergeCache(accepted)
-            ArtistSearchResult(q, raw.size, accepted.size, accepted, combined)
+
+            val strict = enriched.filter { SearchQueryMatcher.matches(it, q) }
+                .sortedWith(
+                    compareByDescending<MetalArtist> { SearchQueryMatcher.exactName(it, q) }
+                        .thenByDescending { it.metadataConfidence }
+                )
+            val suggestions = enriched.filterNot { SearchQueryMatcher.matches(it, q) }
+                .take(5)
+
+            // Last.fm artist.search is fuzzy. Only strict query matches enter the local archive;
+            // fuzzy neighbors are returned separately as "もしかして…" candidates.
+            val combined = mergeCache(strict)
+            ArtistSearchResult(q, raw.size, strict.size, strict, suggestions, combined)
         }
     }
 
