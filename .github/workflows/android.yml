@@ -56,6 +56,7 @@ jobs:
           python tools/check_v091_distribution_ui.py
           python tools/check_v0911_auto_dna.py
           python tools/check_v093_auth.py
+          python tools/check_v097_search_quality.py
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest
