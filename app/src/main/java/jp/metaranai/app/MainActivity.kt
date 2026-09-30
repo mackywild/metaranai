@@ -317,6 +317,7 @@ private fun ExternalMeta(a: MetalArtist) {
 private fun SearchScreen(vm: MainViewModel) {
     val history by vm.searchHistory.collectAsState()
     val remote by vm.remoteSearchResults.collectAsState()
+    val suggestions by vm.remoteSearchSuggestions.collectAsState()
     val remoteSearching by vm.remoteSearching.collectAsState()
     val remoteStatus by vm.remoteSearchStatus.collectAsState()
     val external by vm.externalArtists.collectAsState()
@@ -324,8 +325,13 @@ private fun SearchScreen(vm: MainViewModel) {
     val deepDiveStatus by vm.deepDiveStatus.collectAsState()
     val deepDiving by vm.deepDiving.collectAsState()
     var query by remember { mutableStateOf("") }
+
     val localResults = remember(query, external) { vm.search(query) }
     val merged = (localResults + remote).distinctBy { it.name.lowercase() }
+    val suggestionResults = suggestions
+        .filterNot { suggestion -> merged.any { it.name.equals(suggestion.name, true) } }
+        .distinctBy { it.name.lowercase() }
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header() }
         item {
@@ -334,6 +340,7 @@ private fun SearchScreen(vm: MainViewModel) {
                 onValueChange = { query = it; vm.clearRemoteSearch() },
                 singleLine = true,
                 label = { Text("バンド名 / 国 / ジャンル") },
+                supportingText = { Text("半角スペース区切りはAND検索") },
                 modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
@@ -341,43 +348,119 @@ private fun SearchScreen(vm: MainViewModel) {
                 onClick = { vm.searchExternal(query) },
                 enabled = query.trim().length >= 2 && !remoteSearching,
                 modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
-            ) { Text(if (remoteSearching) "世界のメタルDBを探索中…" else "ローカルに無ければ世界から検索") }
-            if (remoteStatus.isNotBlank()) Text(remoteStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
-            Text(
-                if (query.isBlank()) "ローカル図鑑から発掘度の高い候補" else "検索結果 ${merged.size}件",
-                color = Muted, modifier = Modifier.padding(horizontal = 20.dp)
-            )
-        }
-        items(merged) { artist ->
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
+            ) {
+                Text(if (remoteSearching) "世界から検索中…" else "ローカルに無ければ世界から検索")
+            }
+
+            if (remoteStatus.isNotBlank()) {
                 Text(
-                    "発掘度 ${(artist.discovery * 100).toInt()}%${if (artist.source != ArtistSource.BUILTIN) "  •  🌐 HIDDEN ${artist.hiddenScore}" else ""}",
-                    color = Acid, fontSize = 12.sp
+                    remoteStatus,
+                    color = Muted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
                 )
-                if (artist.sourceSeed?.startsWith("Search:") == true) Text("🌐 外部検索からローカル図鑑へ保存済み", color = Muted, fontSize = 10.sp)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SpotifyButton(vm, artist, Modifier.weight(1f), onBeforeOpen = { vm.recordSearch(query.ifBlank { "discover" }, artist) })
-                    OutlinedButton(onClick = {
-                        vm.recordSearch(query.ifBlank { "discover" }, artist)
-                        vm.openYouTube(artist)
-                    }, modifier = Modifier.weight(1f)) { Text("YouTube") }
-                    OutlinedButton(onClick = {
-                        vm.recordSearch(query.ifBlank { "discover" }, artist)
-                        vm.deepDive(artist)
-                    }, enabled = !deepDiving, modifier = Modifier.weight(1f)) { Text("⛏") }
-                }
+            }
+
+            if (query.isNotBlank()) {
+                Text(
+                    "検索結果 ${merged.size}件",
+                    color = Muted,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
             }
         }
+
+        items(merged) { artist ->
+            SearchArtistCard(
+                vm = vm,
+                artist = artist,
+                query = query,
+                deepDiving = deepDiving
+            )
+        }
+
+        if (suggestionResults.isNotEmpty()) {
+            item {
+                Text(
+                    "もしかして…",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(20.dp, 14.dp, 20.dp, 4.dp)
+                )
+            }
+            items(suggestionResults) { artist ->
+                SearchArtistCard(
+                    vm = vm,
+                    artist = artist,
+                    query = query,
+                    deepDiving = deepDiving
+                )
+            }
+        }
+
         if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
             DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
         }
+
         if (history.isNotEmpty()) item {
             Spacer(Modifier.height(10.dp))
             Text("最近の探索", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 8.dp))
             Text(history.take(8).joinToString("  •  ") { it.artistName }, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
+        }
+    }
+}
+
+@Composable
+private fun SearchArtistCard(
+    vm: MainViewModel,
+    artist: MetalArtist,
+    query: String,
+    deepDiving: Boolean
+) {
+    Column(
+        Modifier
+            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .fillMaxWidth()
+            .background(Card, RoundedCornerShape(18.dp))
+            .padding(16.dp)
+    ) {
+        Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(10.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SpotifyButton(
+                vm,
+                artist,
+                Modifier.weight(1.15f),
+                fontSize = 11,
+                onBeforeOpen = { vm.recordSearch(query.ifBlank { "discover" }, artist) }
+            )
+            Button(
+                onClick = {
+                    vm.recordSearch(query.ifBlank { "discover" }, artist)
+                    vm.openYouTube(artist)
+                },
+                modifier = Modifier.weight(1.15f),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF0000),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("YouTube", color = Color.White, fontSize = 11.sp, maxLines = 1)
+            }
+            OutlinedButton(
+                onClick = {
+                    vm.recordSearch(query.ifBlank { "discover" }, artist)
+                    vm.deepDive(artist)
+                },
+                enabled = !deepDiving,
+                modifier = Modifier.weight(.70f),
+                contentPadding = PaddingValues(horizontal = 6.dp)
+            ) {
+                Text("⛏", maxLines = 1)
+            }
         }
     }
 }
