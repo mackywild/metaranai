@@ -10,7 +10,8 @@ class SearchQueryMatcherTest {
         country = "Japan",
         genres = listOf("Melodic Power Metal", "Symphonic Metal"),
         vector = MetalVector(.8f, .8f, .4f, .8f, .4f, .2f, .8f, .7f),
-        discovery = .5f
+        discovery = .5f,
+        reason = "test fixture"
     )
 
     private val skylines = MetalArtist(
@@ -18,7 +19,8 @@ class SearchQueryMatcherTest {
         country = "External",
         genres = listOf("Metalcore", "Math Metal"),
         vector = MetalVector(.4f, .6f, .7f, .3f, .7f, .6f, .3f, .4f),
-        discovery = .7f
+        discovery = .7f,
+        reason = "test fixture"
     )
 
     @Test
