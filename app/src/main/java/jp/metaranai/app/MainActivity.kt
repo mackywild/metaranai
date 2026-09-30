@@ -3,6 +3,7 @@ package jp.metaranai.app
 import android.os.Bundle
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.ViewModelProvider
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -10,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -626,90 +628,418 @@ private fun DnaScreen(vm: MainViewModel) {
     }
 }
 
+private enum class SettingsPanel {
+    ACCOUNT, GENRE, ARCHIVE, DISCOVERY, SPOTIFY, BACKUP
+}
+
+private const val PRIVACY_POLICY_URL = "https://mackywild.github.io/metaranai/privacy-policy.html"
+
 @Composable
 private fun SettingsScreen(vm: MainViewModel) {
     val context = LocalContext.current
-    val status by vm.spotifyStatus.collectAsState(); val syncing by vm.syncing.collectAsState(); val signals by vm.spotifySignals.collectAsState()
-    val discoveryStatus by vm.discoveryStatus.collectAsState(); val discovering by vm.discovering.collectAsState(); val external by vm.externalArtists.collectAsState()
-    val lens by vm.genreLens.collectAsState(); val backupStatus by vm.backupStatus.collectAsState()
-    var clientId by remember { mutableStateOf(vm.clientId()) }; var lastFmKey by remember { mutableStateOf(vm.lastFmApiKey()) }
+    val account by vm.account.collectAsState()
+    val status by vm.spotifyStatus.collectAsState()
+    val syncing by vm.syncing.collectAsState()
+    val signals by vm.spotifySignals.collectAsState()
+    val discoveryStatus by vm.discoveryStatus.collectAsState()
+    val discovering by vm.discovering.collectAsState()
+    val lens by vm.genreLens.collectAsState()
+    val backupStatus by vm.backupStatus.collectAsState()
+
+    var openPanel by remember { mutableStateOf<SettingsPanel?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var clientId by remember { mutableStateOf(vm.clientId()) }
+    var lastFmKey by remember { mutableStateOf(vm.lastFmApiKey()) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) runCatching { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(vm.exportBackupJson()) } }
-            .onSuccess { vm.setBackupStatus("バックアップを書き出しました") }.onFailure { vm.setBackupStatus("書き出し失敗: ${it.message}") }
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(vm.exportBackupJson()) }
+            }.onSuccess {
+                vm.setBackupStatus("バックアップを書き出しました")
+            }.onFailure {
+                vm.setBackupStatus("書き出し失敗: ${it.message}")
+            }
+        }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("読込失敗") }
-            .onSuccess(vm::importBackupJson).onFailure { vm.setBackupStatus("読込失敗: ${it.message}") }
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("読込失敗")
+            }.onSuccess(vm::importBackupJson).onFailure {
+                vm.setBackupStatus("読込失敗: ${it.message}")
+            }
+        }
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    val accountSummary = when {
+        account == null -> "未ログイン"
+        account!!.isGuest -> "ゲスト利用中"
+        else -> "${accountProviderLabel(account!!.provider)}でログイン中"
+    }
+    val activeGenreSummary = GenreLensCatalog.displayNames(vm.activeGenres()).ifBlank { "指定なし" }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         item { Header() }
-        item { AccountSettingsCard(vm) }
+
         item {
-            SettingsCard("ジャンルレンズ", "選択したジャンルの中から、DNAに合うバンドを探します。候補が不足した場合は自動で補充します。") {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    GenreLensMode.entries.forEach { mode -> FilterChip(selected = lens.mode == mode, onClick = { vm.setGenreLensMode(mode) }, label = { Text(mode.label) }) }
-                }
-                if (lens.mode == GenreLensMode.MANUAL) {
-                    Text("手動ジャンル（複数可）", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-                    GenreSelector(selected = lens.manualGenres, onToggle = vm::toggleManualGenre)
-                }
-                if (lens.mode == GenreLensMode.WEEKDAY) {
-                    Text("曜日ごとに複数ジャンル登録", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-                    DayOfWeek.values().forEach { day ->
-                        Text("${GenreLensCatalog.dayLabel(day)}曜日", color = Acid, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-                        GenreSelector(selected = lens.weekdayGenres[day.name].orEmpty(), onToggle = { vm.toggleWeekdayGenre(day, it) })
+            Text(
+                "設定",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+        }
+
+        item {
+            SettingsMenuItem(
+                title = "アカウント・同期",
+                summary = accountSummary,
+                onClick = { openPanel = SettingsPanel.ACCOUNT }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "ジャンル固定",
+                summary = "本日: $activeGenreSummary",
+                onClick = { openPanel = SettingsPanel.GENRE }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "Spotify連携",
+                summary = if (vm.clientId().isBlank()) "未設定" else "Spotifyの視聴傾向をDNAへ反映",
+                onClick = { openPanel = SettingsPanel.SPOTIFY }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "外部検索・発掘",
+                summary = "Last.fm / MusicBrainz の接続設定",
+                onClick = { openPanel = SettingsPanel.DISCOVERY }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "図鑑データ",
+                summary = "保存したバンド情報と図鑑の状態",
+                onClick = { openPanel = SettingsPanel.ARCHIVE }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "バックアップ",
+                summary = "JSON形式で書き出し・復元",
+                onClick = { openPanel = SettingsPanel.BACKUP }
+            )
+        }
+
+        item {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "その他",
+                color = Muted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "プライバシーポリシー",
+                summary = "データの取得・利用・削除について確認",
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
                     }
                 }
-                Text("本日のジャンル: ${GenreLensCatalog.displayNames(vm.activeGenres()).ifBlank { "指定なし" }}", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-            }
-            Spacer(Modifier.height(12.dp))
+            )
         }
-        item {
-            SettingsCard("メタル図鑑", "発掘したバンドを保存し、評価やジャンルで絞り込めます。") {
-                Text("図鑑 ${vm.archiveArtists().size}組 / 外部発掘 ${external.size}組 / ジャンル ${vm.archiveGenreCounts().size}系統", color = Color.White, fontSize = 11.sp)
-                Text("下部の『図鑑』タブから開く", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+        if (account != null) {
+            item {
+                SettingsMenuItem(
+                    title = "アカウント削除",
+                    summary = "クラウド上のアカウントと同期データを削除",
+                    destructive = true,
+                    onClick = { showDeleteConfirm = true }
+                )
             }
-            Spacer(Modifier.height(12.dp))
         }
-        item {
-            SettingsCard("外部発掘", "Last.fm + MusicBrainzから未知のメタルバンドを探し、図鑑へ保存します。") {
-                OutlinedTextField(value = lastFmKey, onValueChange = { lastFmKey = it }, label = { Text("Last.fm API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = { vm.saveLastFmApiKey(lastFmKey); vm.syncExternalDiscovery() }, enabled = !discovering, modifier = Modifier.fillMaxWidth()) { Text(if (discovering) "外部を掘削中…" else "未知のMetalを発掘") }
-                Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)); Text("ローカル図鑑: ${external.size}組 / 保存上限なし", color = Color.White, fontSize = 11.sp)
-            }
-            Spacer(Modifier.height(12.dp))
+    }
+
+    when (openPanel) {
+        SettingsPanel.ACCOUNT -> SettingsDialogShell(
+            title = "アカウント・同期",
+            onDismiss = { openPanel = null }
+        ) {
+            AccountSettingsContent(vm)
         }
-        item {
-            SettingsCard("Spotify連携", "バンド名を完全一致で照合し、本人と確認できた場合だけSpotifyページを有効にします。") {
-                OutlinedTextField(value = clientId, onValueChange = { clientId = it }, label = { Text("Spotify Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = { vm.saveClientId(clientId); vm.syncSpotify() }, enabled = !syncing, modifier = Modifier.fillMaxWidth()) { Text(if (syncing) "解析中…" else "Spotifyと接続してDNA更新") }
-                Text(status, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)); signals.forEach { Text(it, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp)) }
-            }
+
+        SettingsPanel.GENRE -> SettingsDialogShell(
+            title = "ジャンル固定",
+            onDismiss = { openPanel = null }
+        ) {
+            Text(
+                "おすすめ対象を指定ジャンルに固定します。候補が不足した場合は自動で補充します。",
+                color = Muted,
+                fontSize = 12.sp
+            )
             Spacer(Modifier.height(12.dp))
-        }
-        item {
-            SettingsCard("データ保護", "従来のJSONバックアップ形式を維持し、古いバックアップからも復元できます。") {
-                Text("図鑑DB: ${vm.archiveDatabaseCount()}組", color = Color.White, fontSize = 11.sp)
-                Text("互換バックアップ: metaranai-backup JSON", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = { exportLauncher.launch("metaranai-backup-v0.9.3.json") }, modifier = Modifier.fillMaxWidth()) { Text("分析データをバックアップ") }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("バックアップを復元") }
-                if (backupStatus.isNotBlank()) Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                GenreLensMode.entries.forEach { mode ->
+                    val label = when (mode) {
+                        GenreLensMode.OFF -> "指定なし"
+                        GenreLensMode.WEEKDAY -> "曜日固定"
+                        GenreLensMode.MANUAL -> "手動固定"
+                    }
+                    FilterChip(
+                        selected = lens.mode == mode,
+                        onClick = { vm.setGenreLensMode(mode) },
+                        label = { Text(label, fontSize = 10.sp) }
+                    )
+                }
             }
+            if (lens.mode == GenreLensMode.MANUAL) {
+                Text("固定するジャンル（複数可）", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                GenreSelector(selected = lens.manualGenres, onToggle = vm::toggleManualGenre)
+            }
+            if (lens.mode == GenreLensMode.WEEKDAY) {
+                Text("曜日ごとに固定するジャンル", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                DayOfWeek.values().forEach { day ->
+                    Text(
+                        "${GenreLensCatalog.dayLabel(day)}曜日",
+                        color = Acid,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    GenreSelector(
+                        selected = lens.weekdayGenres[day.name].orEmpty(),
+                        onToggle = { vm.toggleWeekdayGenre(day, it) }
+                    )
+                }
+            }
+            Text(
+                "本日の固定ジャンル: ${GenreLensCatalog.displayNames(vm.activeGenres()).ifBlank { "指定なし" }}",
+                color = Muted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+
+        SettingsPanel.SPOTIFY -> SettingsDialogShell(
+            title = "Spotify連携",
+            onDismiss = { openPanel = null }
+        ) {
+            Text(
+                "Spotifyの視聴傾向を解析してMetal DNAへ反映します。",
+                color = Muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = clientId,
+                onValueChange = { clientId = it },
+                label = { Text("Spotify Client ID") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    vm.saveClientId(clientId)
+                    vm.syncSpotify()
+                },
+                enabled = !syncing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (syncing) "解析中…" else "Spotifyと接続してDNA更新")
+            }
+            if (status.isNotBlank()) {
+                Text(status, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+            signals.forEach {
+                Text(it, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+            }
+        }
+
+        SettingsPanel.DISCOVERY -> SettingsDialogShell(
+            title = "外部検索・発掘",
+            onDismiss = { openPanel = null }
+        ) {
+            Text(
+                "Last.fm + MusicBrainzから未知のメタルバンドを探し、図鑑へ保存します。",
+                color = Muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = lastFmKey,
+                onValueChange = { lastFmKey = it },
+                label = { Text("Last.fm API Key") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    vm.saveLastFmApiKey(lastFmKey)
+                    vm.syncExternalDiscovery()
+                },
+                enabled = !discovering,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (discovering) "外部を探索中…" else "未知のMetalを発掘")
+            }
+            if (discoveryStatus.isNotBlank()) {
+                Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+
+        SettingsPanel.ARCHIVE -> SettingsDialogShell(
+            title = "図鑑データ",
+            onDismiss = { openPanel = null }
+        ) {
+            Text(
+                "発掘・検索したバンド情報をローカル図鑑として保持しています。",
+                color = Muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Text("登録バンド: ${vm.archiveArtists().size}組", color = Color.White, fontSize = 12.sp)
+            Text("ジャンル: ${vm.archiveGenreCounts().size}系統", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
+            Text("閲覧・評価は下部の「図鑑」タブから行えます。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
+        }
+
+        SettingsPanel.BACKUP -> SettingsDialogShell(
+            title = "バックアップ",
+            onDismiss = { openPanel = null }
+        ) {
+            Text(
+                "従来のmetaranai-backup JSON形式を維持し、古いバックアップからも復元できます。",
+                color = Muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = { exportLauncher.launch("metaranai-backup-v0.9.8.json") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("分析データをバックアップ")
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("バックアップを復元")
+            }
+            if (backupStatus.isNotBlank()) {
+                Text(backupStatus, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+
+        null -> Unit
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("アカウントを削除しますか？") },
+            text = {
+                Text(
+                    "Firebase上のアカウントとクラウド同期データを削除します。端末内のLocal DBやJSONデータは残ります。"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        vm.deleteAccount()
+                    }
+                ) {
+                    Text("削除する", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("キャンセル")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsMenuItem(
+    title: String,
+    summary: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        color = Card,
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = if (destructive) MaterialTheme.colorScheme.error else Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Text(summary, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+            }
+            Text("›", color = if (destructive) MaterialTheme.colorScheme.error else Acid, fontSize = 24.sp)
         }
     }
 }
 
 @Composable
-private fun SettingsCard(title: String, description: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp)) {
-        Text(title, color = Acid, fontWeight = FontWeight.Bold); Text(description, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp)); Spacer(Modifier.height(10.dp)); content()
-    }
+private fun SettingsDialogShell(
+    title: String,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                content()
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("閉じる")
+            }
+        }
+    )
+}
+
+private fun accountProviderLabel(provider: String): String = when (provider) {
+    "password" -> "メール"
+    "google.com" -> "Google"
+    "apple.com" -> "Apple"
+    "facebook.com" -> "Facebook"
+    "twitter.com" -> "X"
+    "guest" -> "ゲスト"
+    else -> provider
 }
 
 @Composable
@@ -806,54 +1136,164 @@ private fun OnboardingScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun AccountSettingsCard(vm: MainViewModel) {
+private fun AccountSettingsContent(vm: MainViewModel) {
     val context = LocalContext.current
     val activity = context as? Activity
     val account by vm.account.collectAsState()
     val status by vm.accountStatus.collectAsState()
     val pending by vm.legacyMigrationPending.collectAsState()
     val conflict by vm.cloudConflictPending.collectAsState()
-    var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }
-    SettingsCard("アカウントとクラウド同期", "Google / Apple / Facebook / X / メールで記録を引き継げます。JSONバックアップも非常用として維持します。") {
-        if (account == null) {
-            Text("おすすめ", color = Muted, fontSize = 10.sp)
-            Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.fillMaxWidth()) { Text("Googleで続ける") }
-            OutlinedTextField(email, { email = it }, label = { Text("メールアドレス") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(password, { password = it }, label = { Text("パスワード（6文字以上）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { vm.signInEmail(email, password, true) }, modifier = Modifier.fillMaxWidth()) { Text("確認メールを送信して登録") }
-            TextButton(onClick = { vm.signInEmail(email, password, false) }, modifier = Modifier.fillMaxWidth()) { Text("既存メールでログイン") }
-            Text("その他", color = Muted, fontSize = 10.sp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.weight(1f)) { Text("Apple") }
-                OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
-                OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
-            }
-        } else {
-            Text("ログイン中  ${account!!.provider}", color = Acid, fontWeight = FontWeight.Bold)
-            Text(account!!.email.ifBlank { account!!.displayName.ifBlank { account!!.uid } }, color = Color.White, fontSize = 11.sp)
-            if (conflict) {
-                Spacer(Modifier.height(8.dp))
-                Text("⚠ 端末とクラウドの両方に記録があります。自動上書きしません。", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Button(onClick = vm::resolveCloudConflictUseCloud, modifier = Modifier.fillMaxWidth()) { Text("クラウド記録をこの端末へ復元") }
-                OutlinedButton(onClick = vm::resolveCloudConflictUseLocal, modifier = Modifier.fillMaxWidth()) { Text("この端末の記録でクラウドを更新") }
-            } else if (pending) {
-                Spacer(Modifier.height(8.dp))
-                Text("この端末にV0.8以前の記録があります。クラウドへ引き継ぐまで端末データは変更しません。", color = Color.White, fontSize = 11.sp)
-                Button(onClick = vm::migrateLocalDataToAccount, modifier = Modifier.fillMaxWidth()) { Text("この端末の記録をアカウントへ引き継ぐ") }
-            }
-            Button(onClick = vm::syncAccountNow, enabled = vm.cloudConfigured, modifier = Modifier.fillMaxWidth()) { Text("今すぐクラウド同期") }
-            if (!vm.cloudConfigured) Text("クラウド同期はFirebase Storage設定後に利用できます。ログイン自体は有効です。", color = Muted, fontSize = 10.sp)
-            OutlinedButton(onClick = vm::signOutAccount, modifier = Modifier.fillMaxWidth()) { Text("ログアウト") }
-            TextButton(onClick = vm::deleteAccount, modifier = Modifier.fillMaxWidth()) { Text("アカウントを削除") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    Text(
+        "Google / Apple / Facebook / X / メールで記録を引き継げます。",
+        color = Muted,
+        fontSize = 12.sp
+    )
+    Spacer(Modifier.height(10.dp))
+
+    if (account == null) {
+        Text("おすすめ", color = Muted, fontSize = 10.sp)
+        Button(
+            onClick = { activity?.let { vm.signInGoogle(it) } },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Googleで続ける")
         }
-        when {
-            !vm.authConfigured -> Text("Firebase Authentication未設定：docs/17_ACCOUNT_AND_FIREBASE_SETUP.md を参照。ゲスト/既存Localデータは利用できます。", color = Muted, fontSize = 10.sp)
-            !vm.googleConfigured -> Text("Googleログイン未設定：GOOGLE_WEB_CLIENT_IDを確認してください。メール認証は利用できます。", color = Muted, fontSize = 10.sp)
-            !vm.cloudConfigured -> Text("Firebase Storage未設定：ログインは利用できますがクラウド同期は無効です。", color = Muted, fontSize = 10.sp)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            email,
+            { email = it },
+            label = { Text("メールアドレス") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            password,
+            { password = it },
+            label = { Text("パスワード（6文字以上）") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = { vm.signInEmail(email, password, true) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("確認メールを送信して登録")
         }
-        if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+        TextButton(
+            onClick = { vm.signInEmail(email, password, false) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("既存メールでログイン")
+        }
+        Text("その他のログイン", color = Muted, fontSize = 10.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(
+                onClick = { activity?.let { vm.signInProvider(it, "apple.com") } },
+                modifier = Modifier.weight(1f)
+            ) { Text("Apple") }
+            OutlinedButton(
+                onClick = { activity?.let { vm.signInFacebook(it) } },
+                modifier = Modifier.weight(1f)
+            ) { Text("Facebook") }
+            OutlinedButton(
+                onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } },
+                modifier = Modifier.weight(1f)
+            ) { Text("X") }
+        }
+    } else {
+        Text(
+            "ログイン中  ${accountProviderLabel(account!!.provider)}",
+            color = Acid,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            account!!.email.ifBlank { account!!.displayName.ifBlank { account!!.uid } },
+            color = Color.White,
+            fontSize = 11.sp
+        )
+
+        if (conflict) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "⚠ 端末とクラウドの両方に記録があります。自動上書きしません。",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Button(
+                onClick = vm::resolveCloudConflictUseCloud,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("クラウド記録をこの端末へ復元")
+            }
+            OutlinedButton(
+                onClick = vm::resolveCloudConflictUseLocal,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("この端末の記録でクラウドを更新")
+            }
+        } else if (pending) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "この端末にV0.8以前の記録があります。クラウドへ引き継ぐまで端末データは変更しません。",
+                color = Color.White,
+                fontSize = 11.sp
+            )
+            Button(
+                onClick = vm::migrateLocalDataToAccount,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("この端末の記録をアカウントへ引き継ぐ")
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = vm::syncAccountNow,
+            enabled = vm.cloudConfigured,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("今すぐクラウド同期")
+        }
+        if (!vm.cloudConfigured) {
+            Text(
+                "クラウド同期はFirebase Storage設定後に利用できます。ログイン自体は有効です。",
+                color = Muted,
+                fontSize = 10.sp
+            )
+        }
+        OutlinedButton(
+            onClick = vm::signOutAccount,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("ログアウト")
+        }
     }
-    Spacer(Modifier.height(12.dp))
+
+    when {
+        !vm.authConfigured -> Text(
+            "Firebase Authentication未設定。ゲスト/既存Localデータは利用できます。",
+            color = Muted,
+            fontSize = 10.sp
+        )
+        !vm.googleConfigured -> Text(
+            "メール認証は利用可能です。Googleログイン設定を確認してください。",
+            color = Muted,
+            fontSize = 10.sp
+        )
+        !vm.cloudConfigured -> Text(
+            "ログインは利用できますが、クラウド同期は現在無効です。",
+            color = Muted,
+            fontSize = 10.sp
+        )
+    }
+
+    if (status.isNotBlank()) {
+        Text(status, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+    }
 }
 
 private fun formatCompact(n: Long): String = when {

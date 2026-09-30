@@ -57,6 +57,7 @@ jobs:
           python tools/check_v0911_auto_dna.py
           python tools/check_v093_auth.py
           python tools/check_v097_search_quality.py
+          python tools/check_v098_settings_dialogs.py
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest
@@ -118,7 +119,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.7-apk
+          name: metaranai-v0.9.8-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -126,7 +127,7 @@ jobs:
         if: env.HAS_SIGNING_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.7-aab
+          name: metaranai-v0.9.8-aab
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
 
@@ -134,6 +135,6 @@ jobs:
         if: env.HAS_SIGNING_KEY != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.9.7-aab-unsigned
+          name: metaranai-v0.9.8-aab-unsigned
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
