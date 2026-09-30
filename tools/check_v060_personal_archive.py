@@ -10,8 +10,9 @@ workflow=(root/'.github/workflows/android.yml').read_text()
 
 assert 'val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")' in ui
 assert 'private fun ArchiveScreen' in ui
-for marker in ['private fun ArchiveScreen','未評価','GenreLensCatalog.names()','Spotify本人確認済みリンク取得済み']:
+for marker in ['private fun ArchiveScreen','未評価','GenreLensCatalog.names()','SpotifyButton']:
     assert marker in ui, marker
+# Presentation details such as verification-status labels are covered by current-version UI checks.
 assert 'vocalFilter' not in ui
 assert 'WHY THIS ARTIST?' not in ui
 assert 'fun whyThisArtist' in vm
