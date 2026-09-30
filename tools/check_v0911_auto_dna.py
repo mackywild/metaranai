@@ -33,6 +33,7 @@ assert 'Slider(' not in block
 assert 'この数値でDNAを生成' not in block
 assert 'ランダムDNAで遊ぶ' not in block
 assert 'あなたのメタルDNA' in block
+assert 'よく刺さっているジャンル' not in block
 assert '手動編集はできません' not in block
 assert 'DNA名の次回自動生成まで' not in ui
 
