@@ -488,7 +488,7 @@ private fun ArchiveScreen(vm: MainViewModel) {
     val favorites = latestReaction.values.count { it.reaction == Reaction.LOVE_ALL }
     val filtered = archive.filter { artist ->
         val record = latestReaction[artist.name.trim().lowercase()]
-        val queryOk = query.isBlank() || artist.name.contains(query, true) || artist.country.contains(query, true) || artist.genres.any { it.contains(query, true) }
+        val queryOk = query.isBlank() || SearchQueryMatcher.matches(artist, query)
         val reactionOk = when (reactionFilter) {
             "UNRATED" -> record == null
             "ALL" -> true
@@ -514,8 +514,11 @@ private fun ArchiveScreen(vm: MainViewModel) {
             }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
-                value = query, onValueChange = { query = it }, singleLine = true,
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
                 label = { Text("図鑑検索: バンド名 / 国 / ジャンル") },
+                supportingText = { Text("半角スペース区切りはAND検索") },
                 modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
@@ -560,14 +563,40 @@ private fun ArchiveScreen(vm: MainViewModel) {
                     Text(record?.reaction?.label ?: "未評価", color = if (record == null) Muted else Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(5.dp))
-                Text("発掘度 ${artist.hiddenScore} • 新規性 ${(artist.discovery * 100).toInt()}%", color = Acid, fontSize = 10.sp)
-                if (record != null) Text("最終評価 ${record.date} • 当時DNA一致度 ${record.score}%", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
-                if (vm.spotifyLinkCached(artist)) Text("Spotify本人確認済みリンク取得済み", color = Muted, fontSize = 9.sp, modifier = Modifier.padding(top = 3.dp))
+                Text(
+                    "発掘度 ${archiveStarRating(artist.hiddenScore)}  •  新規性 ${archiveStarRating((artist.discovery * 100).toInt())}",
+                    color = Acid,
+                    fontSize = 10.sp
+                )
+                if (record != null) {
+                    Text(
+                        "評価日時 ${formatEvaluationDateTime(record.date)}",
+                        color = Muted,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SpotifyButton(vm, artist, Modifier.weight(1f), fontSize = 11)
-                    OutlinedButton(onClick = { vm.openYouTube(artist) }, modifier = Modifier.weight(1f)) { Text("YouTube", fontSize = 11.sp) }
-                    OutlinedButton(onClick = { vm.deepDive(artist) }, enabled = !deepDiving, modifier = Modifier.weight(1f)) { Text("⛏", fontSize = 12.sp) }
+                    Button(
+                        onClick = { vm.openYouTube(artist) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF0000),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("YouTube", color = Color.White, fontSize = 11.sp, maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { vm.deepDive(artist) },
+                        enabled = !deepDiving,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("⛏", fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -580,6 +609,16 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
         Text(value, color = Acid, fontWeight = FontWeight.Black, fontSize = 17.sp); Text(label, color = Muted, fontSize = 10.sp)
     }
 }
+
+
+private fun archiveStarRating(score: Int): String {
+    val filled = ((score.coerceIn(0, 100) + 19) / 20).coerceIn(0, 5)
+    return "★".repeat(filled) + "☆".repeat(5 - filled)
+}
+
+private fun formatEvaluationDateTime(raw: String): String =
+    raw.replace('T', ' ').let { if (it.length > 16) it.take(16) else it }
+
 
 @Composable
 private fun DnaScreen(vm: MainViewModel) {
