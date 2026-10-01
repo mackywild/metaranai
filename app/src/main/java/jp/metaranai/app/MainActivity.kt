@@ -659,7 +659,7 @@ private fun DnaScreen(vm: MainViewModel) {
 }
 
 private enum class SettingsPanel {
-    ACCOUNT, GENRE, ARCHIVE, DISCOVERY, SPOTIFY, BACKUP
+    ACCOUNT, GENRE, ARCHIVE, DISCOVERY, SPOTIFY, LASTFM, BACKUP
 }
 
 private const val PRIVACY_POLICY_URL = "https://mackywild.github.io/metaranai/privacy-policy.html"
@@ -671,6 +671,8 @@ private fun SettingsScreen(vm: MainViewModel) {
     val status by vm.spotifyStatus.collectAsState()
     val syncing by vm.syncing.collectAsState()
     val signals by vm.spotifySignals.collectAsState()
+    val lastFmProfileStatus by vm.lastFmProfileStatus.collectAsState()
+    val lastFmProfileSyncing by vm.lastFmProfileSyncing.collectAsState()
     val discoveryStatus by vm.discoveryStatus.collectAsState()
     val discovering by vm.discovering.collectAsState()
     val lens by vm.genreLens.collectAsState()
@@ -679,7 +681,8 @@ private fun SettingsScreen(vm: MainViewModel) {
     var openPanel by remember { mutableStateOf<SettingsPanel?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var clientId by remember { mutableStateOf(vm.clientId()) }
-    var lastFmKey by remember { mutableStateOf(vm.lastFmApiKey()) }
+    var lastFmUsername by remember { mutableStateOf(vm.lastFmUsername()) }
+    var lastFmKey by remember { mutableStateOf("") }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) {
@@ -749,8 +752,19 @@ private fun SettingsScreen(vm: MainViewModel) {
         }
         item {
             SettingsMenuItem(
+                title = "Last.fm連携（任意）",
+                summary = if (vm.lastFmUsername().isBlank()) {
+                    "長期の視聴履歴からDNAと発掘Seedを強化"
+                } else {
+                    "@${vm.lastFmUsername()} の公開履歴を反映"
+                },
+                onClick = { openPanel = SettingsPanel.LASTFM }
+            )
+        }
+        item {
+            SettingsMenuItem(
                 title = "外部検索・発掘",
-                summary = "Last.fm / MusicBrainz の接続設定",
+                summary = if (vm.lastFmConfigured()) "Last.fm / MusicBrainz 発掘基盤: 利用可能" else "Last.fm API未設定",
                 onClick = { openPanel = SettingsPanel.DISCOVERY }
             )
         }
@@ -897,30 +911,82 @@ private fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
-        SettingsPanel.DISCOVERY -> SettingsDialogShell(
-            title = "外部検索・発掘",
+        SettingsPanel.LASTFM -> SettingsDialogShell(
+            title = "Last.fm連携（任意）",
             onDismiss = { openPanel = null }
         ) {
             Text(
-                "Last.fm + MusicBrainzから未知のメタルバンドを探し、図鑑へ保存します。",
+                "Last.fmの公開視聴履歴から、長期・直近のMetal傾向をDNAと発掘Seedへ反映します。Last.fmのパスワードは不要で、ユーザー名だけを保存します。",
                 color = Muted,
                 fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
-                value = lastFmKey,
-                onValueChange = { lastFmKey = it },
-                label = { Text("Last.fm API Key") },
+                value = lastFmUsername,
+                onValueChange = { lastFmUsername = it },
+                label = { Text("Last.fmユーザー名") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(10.dp))
             Button(
+                onClick = { vm.syncLastFmProfile(lastFmUsername) },
+                enabled = !lastFmProfileSyncing && lastFmUsername.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (lastFmProfileSyncing) "履歴を解析中…" else "Last.fm履歴でDNAを強化")
+            }
+            if (vm.lastFmUsername().isNotBlank()) {
+                TextButton(
+                    onClick = {
+                        vm.clearLastFmProfile()
+                        lastFmUsername = ""
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Last.fmプロフィール紐付けを解除")
+                }
+            }
+            if (lastFmProfileStatus.isNotBlank()) {
+                Text(lastFmProfileStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+
+        SettingsPanel.DISCOVERY -> SettingsDialogShell(
+            title = "外部検索・発掘",
+            onDismiss = { openPanel = null }
+        ) {
+            Text(
+                "Last.fm + MusicBrainzから未知のメタルバンドを探し、図鑑へ保存します。Last.fmアカウント登録は不要です。",
+                color = Muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            if (!vm.lastFmConfigured()) {
+                Text(
+                    "このビルドにはLast.fm API Keyが設定されていません。開発・テスト用Keyを入力してください。",
+                    color = Muted,
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = lastFmKey,
+                    onValueChange = { lastFmKey = it },
+                    label = { Text("Last.fm API Key（開発用）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+            } else {
+                Text("Last.fm発掘API: 接続設定済み", color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+            }
+            Button(
                 onClick = {
-                    vm.saveLastFmApiKey(lastFmKey)
+                    if (lastFmKey.isNotBlank()) vm.saveLastFmApiKey(lastFmKey)
                     vm.syncExternalDiscovery()
                 },
-                enabled = !discovering,
+                enabled = !discovering && (vm.lastFmConfigured() || lastFmKey.isNotBlank()),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (discovering) "外部を探索中…" else "未知のMetalを発掘")
@@ -1086,7 +1152,10 @@ private fun OnboardingScreen(vm: MainViewModel) {
     val activity = context as? Activity
     val account by vm.account.collectAsState()
     val status by vm.accountStatus.collectAsState()
+    val lastFmStatus by vm.lastFmProfileStatus.collectAsState()
+    val lastFmSyncing by vm.lastFmProfileSyncing.collectAsState()
     var selected by remember { mutableStateOf(setOf<String>()) }
+    var lastFmUsername by remember { mutableStateOf("") }
     var showEmail by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -1154,12 +1223,31 @@ private fun OnboardingScreen(vm: MainViewModel) {
                 Text("メタルDNAを作成", color = Acid, fontWeight = FontWeight.Bold)
                 Text("好きなジャンルを選択（複数可）。選択したジャンルから初期DNAを作り、以後の評価であなた専用に学習します。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
                 Button(onClick = vm::startWithSpotifyOnboarding, modifier = Modifier.fillMaxWidth()) { Text("🎧 Spotifyの視聴傾向から始める") }
-                Text("またはジャンルから初期DNAを作成", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 6.dp))
+                Spacer(Modifier.height(8.dp))
+                Text("Last.fmを使っているなら、長期の視聴履歴から開始できます（任意）", color = Muted, fontSize = 10.sp)
+                OutlinedTextField(
+                    value = lastFmUsername,
+                    onValueChange = { lastFmUsername = it },
+                    label = { Text("Last.fmユーザー名") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedButton(
+                    onClick = { vm.startWithLastFmOnboarding(lastFmUsername) },
+                    enabled = lastFmUsername.isNotBlank() && !lastFmSyncing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (lastFmSyncing) "Last.fm履歴を解析中…" else "⏱ Last.fmの視聴履歴から始める")
+                }
+                if (lastFmStatus.isNotBlank() && lastFmStatus != "未連携") {
+                    Text(lastFmStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+                Text("またはジャンルから初期DNAを作成", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                 GenreSelector(selected) { g -> selected = if (g in selected) selected - g else selected + g }
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { vm.completeOnboardingWithGenres(selected) }, enabled = selected.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("このジャンルから始める") }
-                Text("初回DNAはSpotifyまたはジャンル選択で作成します。ゲストでも利用できます。", color = Muted, fontSize = 12.sp)
-                Text("Spotify未連携でも、ジャンル選択から開始できます。", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                Text("初回DNAはSpotify / Last.fm（任意）/ ジャンル選択のどれからでも作成できます。ゲストでも利用できます。", color = Muted, fontSize = 12.sp)
+                Text("Last.fm未登録でも発掘機能は利用できます。Last.fm連携は履歴による精度ブーストです。", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
             }
         }
     }
