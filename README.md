@@ -1,3 +1,15 @@
+# メタらない？ v0.11.0 — OPTIONAL LAST.FM TASTE PROFILE
+
+V0.11.0は、既存Deep Diveを壊さず、Last.fmの公開視聴履歴を任意のパーソナライズ入力として追加するアップデートです。
+
+## V0.11.0 Highlights
+- Spotify / Last.fm（任意）/ ジャンル選択の3経路で初期Metal DNAを作成。
+- Last.fmはユーザー名のみ保存し、パスワードやLast.fmユーザーセッションは扱わない。
+- overall / 12month / 6month / 7day Top Artists + Recent TracksからMetal Seedを抽出。
+- Last.fm未連携でもArtist Search / Genre補充 / Deep Diveは従来どおり利用可能。
+- Deep Dive本体はV0.6系の内部処理を維持し、V0.11回帰チェックで保護。
+- Android versionCode 30 / versionName 0.11.0。
+
 # メタらない？ v0.9.3 — AUTHENTICATION RELIABILITY
 
 V0.9.3は、GoogleをAndroidの主力ログインとして整理し、認証とクラウドStorageを分離した認証安定化アップデートです。DNA/推薦/Local Metal DBの既存データ互換性は維持します。
@@ -35,8 +47,8 @@ Google/Email認証とCloud Storageは独立設定。詳細は `docs/17_ACCOUNT_A
 ## Compatibility
 - Android applicationId: `jp.metaranai.app`
 - Android SharedPreferences: `metaranai`
-- Android versionCode: 21
-- Android versionName: 0.9.3
+- Android versionCode: 30
+- Android versionName: 0.11.0
 - iOS Bundle ID: `jp.metaranai.ios`
 - iOS Version: 0.9.3
 - iOS Build: 21
@@ -49,4 +61,5 @@ python tools/check_v064_spotify_identity.py
 python tools/check_v070_backup_compat.py
 python tools/check_v080_ios_beta.py
 python tools/check_v090_account_personalization.py
+python tools/check_v011_lastfm_optional_profile.py
 ```
