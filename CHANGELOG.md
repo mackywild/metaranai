@@ -1,5 +1,11 @@
 # Changelog
 
+## V0.10.2 — APP ICON
+- Androidのランチャーアイコンを指定された赤×黒の虫眼鏡 / メタルホーンサインのデザインへ更新。
+- 通常アイコン / roundIcon / Android 8以降のAdaptive Iconで同じアートワークを使用。
+- Android 13以降で旧モノクロマークへ切り替わらないよう、Adaptive Iconの旧monochrome指定を廃止。
+- Android versionCode 29 / versionName 0.10.2。
+
 ## V0.10.1 — ARCHIVE UI REFINEMENT
 - 図鑑検索を「探す」と同じ半角スペース区切りAND検索へ統一。
 - 図鑑カードの発掘度 / 新規性を数値表示から5段階の★表示へ変更。
