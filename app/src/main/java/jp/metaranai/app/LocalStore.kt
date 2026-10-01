@@ -127,7 +127,7 @@ class LocalStore(context: Context) {
     }
     fun saveLastFmProfileSeeds(values: List<String>) {
         val a = JSONArray()
-        values.distinctBy { it.trim().lowercase() }.take(12).forEach(a::put)
+        values.distinctBy { it.trim().lowercase() }.take(12).forEach { a.put(it) }
         prefs.edit().putString("lastfm_profile_seeds_v011", a.toString()).apply()
     }
     fun clearLastFmProfile() {
