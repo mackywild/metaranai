@@ -22,7 +22,7 @@ assert 'fun openYouTube' in vm and 'official music video' in vm and ' live' in v
 assert 'android:icon="@mipmap/ic_launcher"' in manifest
 assert 'android:roundIcon="@mipmap/ic_launcher_round"' in manifest
 for density in ['mdpi','hdpi','xhdpi','xxhdpi','xxxhdpi']:
-    assert (root/f'app/src/main/res/mipmap-{density}/ic_launcher.png').exists(), density
+    assert (root/f'app/src/main/res/mipmap-{density}/ic_launcher.webp').exists(), density
 assert 'out.put("version", 90)' in store
 assert 'Metaranai-Android/0.6.4' in ext
 print('V060_PERSONAL_METAL_ARCHIVE_OK')
