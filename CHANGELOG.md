@@ -1,5 +1,16 @@
 # Changelog
 
+## V0.11.0 — OPTIONAL LAST.FM TASTE PROFILE
+- Last.fmユーザー名による任意連携を追加。Last.fmのパスワードやユーザーセッションは保存せず、公開プロフィールをアプリ側API Keyで参照。
+- user.getTopArtists の overall / 12month / 6month / 7day と user.getRecentTracks 最大200件を解析し、Metal系ArtistだけをSeed化。
+- 未知Artistは artist.getTopTags でMetal判定し、タグからMetalVectorを推定。既知Artistは既存Local Metal DBのVectorを利用。
+- Last.fm由来の推定Vectorを既存Metal DNAへブレンドし、Seedを通常の外部発掘候補へ追加。
+- Onboardingを Spotify / Last.fm（任意）/ ジャンル選択の3経路へ拡張。Last.fm未登録でも従来どおり利用可能。
+- 一般ユーザー向け設定からLast.fm API Key露出を抑え、リリースビルドのBuildConfig Keyを優先。Key未設定ビルドだけ開発用入力欄を表示。
+- 既存 Deep Dive の「単一Artist Seed → Similar取得 → DNA/HIDDEN/発掘度で再順位付け」は変更せず、CIで回帰境界を固定。
+- Android versionCode 30 / versionName 0.11.0。
+
+
 ## V0.10.2 — APP ICON
 - Androidのランチャーアイコンを指定された赤×黒の虫眼鏡 / メタルホーンサインのデザインへ更新。
 - 通常アイコン / roundIcon / Android 8以降のAdaptive Iconで同じアートワークを使用。
