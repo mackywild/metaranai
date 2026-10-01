@@ -942,6 +942,7 @@ private fun SettingsScreen(vm: MainViewModel) {
                         vm.clearLastFmProfile()
                         lastFmUsername = ""
                     },
+                    enabled = !lastFmProfileSyncing,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Last.fmプロフィール紐付けを解除")
