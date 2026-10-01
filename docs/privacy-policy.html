@@ -81,6 +81,11 @@
         <td>Metal DNAの推定、Spotify上のアーティスト本人照合</td>
       </tr>
       <tr>
+        <td>Last.fmプロフィール情報（任意）</td>
+        <td>ユーザーが入力したLast.fmユーザー名、公開Top Artists / Recent Tracksから推定したMetal傾向・発掘Seed</td>
+        <td>Metal DNAの推定、未知のメタルアーティスト発掘の精度向上。Last.fmのパスワードやユーザーsession keyは保存しません</td>
+      </tr>
+      <tr>
         <td>ユーザーが設定したAPI情報（任意）</td>
         <td>Spotify Client ID、Last.fm API Key等</td>
         <td>外部APIを利用する機能の実行</td>
@@ -114,7 +119,7 @@
   <ul>
     <li>Google / Firebase：Authentication、Storage、Firestore、Googleログイン</li>
     <li>Spotify：OAuth認証、Top Artists、Recently Played、アーティスト・楽曲・アルバム検索</li>
-    <li>Last.fm：アーティスト検索、タグ、類似アーティスト、統計情報等</li>
+    <li>Last.fm：アーティスト検索、タグ、類似アーティスト、統計情報、およびユーザーが任意連携した場合の公開Top Artists / Recent Tracks</li>
     <li>MusicBrainz：アーティスト情報・同名アーティスト識別</li>
     <li>Apple iTunes Search API：Spotify本人照合を補助する公開カタログ情報の確認</li>
     <li>Meta / Apple / X：ユーザーが該当ログイン方法を選択し、かつ当該機能が有効な場合の認証</li>
@@ -124,12 +129,20 @@
     本アプリは、ユーザーデータを第三者へ販売しません。また、広告配信を目的としてユーザーデータを販売・提供することはありません。
   </p>
 
-  <h2>4. Spotify連携について</h2>
+  <h2>4. Spotify / Last.fm連携について</h2>
   <p>
     Spotify連携は任意です。ユーザーがSpotify連携を開始した場合、
     本アプリは <code>user-top-read</code> および <code>user-read-recently-played</code>
     等の権限を用いて、Top ArtistsやRecently Playedを取得し、Metal DNA推定に利用します。
-    Spotify連携を利用しなくても、ジャンル選択等から本アプリを利用できます。
+  </p>
+  <p>
+    Last.fmプロフィール連携も任意です。ユーザーがLast.fmユーザー名を入力した場合、
+    本アプリはLast.fm上で公開されているTop ArtistsおよびRecent Tracksを取得し、
+    Metal DNA推定とアーティスト発掘Seedの生成に利用します。本アプリはこの機能のために
+    Last.fmのパスワードまたはLast.fmユーザーsession keyを保存しません。
+  </p>
+  <p>
+    Spotify / Last.fmのいずれも連携しなくても、ジャンル選択や通常の発掘機能から本アプリを利用できます。
   </p>
 
   <h2>5. データの安全管理</h2>
