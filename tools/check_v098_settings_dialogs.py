@@ -44,6 +44,8 @@ assert '端末内のLocal DBやJSONデータは残ります' in settings
 screen = ui[ui.index('private fun SettingsScreen'):ui.index('private fun SettingsMenuItem')]
 assert 'SettingsCard(' not in screen
 assert 'AccountSettingsCard(' not in screen
-assert 'metaranai-backup-v0.9.8.json' in screen
+# Backup export remains present; release-specific filename is checked by check_release_metadata.py.
+assert 'CreateDocument("application/json")' in screen
+assert '分析データをバックアップ' in screen
 
 print('V098_SETTINGS_DIALOGS_OK')
