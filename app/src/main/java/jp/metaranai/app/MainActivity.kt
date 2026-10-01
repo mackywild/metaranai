@@ -1022,7 +1022,7 @@ private fun SettingsScreen(vm: MainViewModel) {
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.9.8.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.0.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")
