@@ -58,7 +58,7 @@ class LastFmProfileClient(private val store: LocalStore) {
 
             val knownByName = knownArtists.associateBy { normalize(it.name) }
             val accepted = mutableListOf<LastFmArtistSignal>()
-            val candidates = scores.values.sortedByDescending { it.score }.take(24)
+            val candidates = scores.values.sortedByDescending { it.score }.take(20)
 
             for (signal in candidates) {
                 if (accepted.size >= 10) break
@@ -76,7 +76,7 @@ class LastFmProfileClient(private val store: LocalStore) {
                     continue
                 }
 
-                val tags = getTopTags(apiKey, signal.name, 12)
+                val tags = runCatching { getTopTags(apiKey, signal.name, 12) }.getOrDefault(emptyList())
                 if (tags.none(DiscoveryTagMapper::isMetalTag)) continue
                 accepted += LastFmArtistSignal(
                     name = signal.name,
