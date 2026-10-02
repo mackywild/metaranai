@@ -112,6 +112,32 @@ class LocalStore(context: Context) {
 
     fun lastFmApiKey(): String = (prefs.getString("lastfm_api_key", "") ?: "").ifBlank { BuildConfig.LASTFM_API_KEY }
     fun saveLastFmApiKey(value: String) = prefs.edit().putString("lastfm_api_key", value.trim()).apply()
+
+    // V0.11: optional Last.fm public-profile linkage. No Last.fm password/session is stored.
+    fun lastFmUsername(): String = prefs.getString("lastfm_username_v011", "") ?: ""
+    fun saveLastFmUsername(value: String) = prefs.edit().putString("lastfm_username_v011", value.trim()).apply()
+    fun lastFmProfileSummary(): String = prefs.getString("lastfm_profile_summary_v011", "未連携") ?: "未連携"
+    fun saveLastFmProfileSummary(value: String) = prefs.edit().putString("lastfm_profile_summary_v011", value).apply()
+    fun loadLastFmProfileSeeds(): List<String> {
+        val raw = prefs.getString("lastfm_profile_seeds_v011", "[]") ?: "[]"
+        return runCatching {
+            val a = JSONArray(raw)
+            (0 until a.length()).mapNotNull { i -> a.optString(i).trim().takeIf { it.isNotBlank() } }
+        }.getOrDefault(emptyList())
+    }
+    fun saveLastFmProfileSeeds(values: List<String>) {
+        val a = JSONArray()
+        values.distinctBy { it.trim().lowercase() }.take(12).forEach { a.put(it) }
+        prefs.edit().putString("lastfm_profile_seeds_v011", a.toString()).apply()
+    }
+    fun clearLastFmProfile() {
+        prefs.edit()
+            .remove("lastfm_username_v011")
+            .remove("lastfm_profile_summary_v011")
+            .remove("lastfm_profile_seeds_v011")
+            .apply()
+    }
+
     fun saveDiscoverySummary(value: String) = prefs.edit().putString("discovery_summary", value).apply()
     fun discoverySummary(): String = prefs.getString("discovery_summary", "未同期") ?: "未同期"
 

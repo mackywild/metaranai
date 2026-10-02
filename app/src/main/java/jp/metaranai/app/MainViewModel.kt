@@ -23,6 +23,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = RecommendationEngine()
     private val spotify = SpotifyClient(app, store)
     private val externalDiscovery = ExternalDiscoveryClient(store)
+    private val lastFmProfile = LastFmProfileClient(store)
     private val accounts = AccountManager(app, store)
 
     private val _account = MutableStateFlow(accounts.current())
@@ -69,6 +70,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val spotifyOpenStatus: StateFlow<String> = _spotifyOpenStatus
     private val _spotifyAvailability = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val spotifyAvailability: StateFlow<Map<String, Boolean>> = _spotifyAvailability
+
+    private val _lastFmProfileStatus = MutableStateFlow(store.lastFmProfileSummary())
+    val lastFmProfileStatus: StateFlow<String> = _lastFmProfileStatus
+    private val _lastFmProfileSyncing = MutableStateFlow(false)
+    val lastFmProfileSyncing: StateFlow<Boolean> = _lastFmProfileSyncing
+    private val _lastFmProfileSeeds = MutableStateFlow(store.loadLastFmProfileSeeds())
 
     private val _discoveryStatus = MutableStateFlow(store.discoverySummary())
     val discoveryStatus: StateFlow<String> = _discoveryStatus
@@ -333,6 +340,85 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveClientId(value: String) = store.saveClientId(value)
     fun lastFmApiKey() = store.lastFmApiKey()
     fun saveLastFmApiKey(value: String) = store.saveLastFmApiKey(value)
+    fun lastFmConfigured(): Boolean = store.lastFmApiKey().isNotBlank()
+    fun lastFmUsername(): String = store.lastFmUsername()
+
+    /**
+     * V0.11 optional Last.fm profile linkage.
+     *
+     * Important: this is intentionally separate from deepDive(). The existing one-artist
+     * Deep Dive pipeline is kept unchanged; this only adds long-term user taste seeds.
+     */
+    fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false) {
+        if (_lastFmProfileSyncing.value || _discovering.value) return
+        val user = username.trim()
+        if (user.isBlank()) {
+            _lastFmProfileStatus.value = "Last.fmユーザー名を入力してください"
+            return
+        }
+        if (store.lastFmApiKey().isBlank()) {
+            _lastFmProfileStatus.value = "Last.fm APIが未設定です"
+            return
+        }
+
+        _lastFmProfileSyncing.value = true
+        _lastFmProfileStatus.value = "Last.fm @$user の視聴傾向を解析中…"
+        viewModelScope.launch {
+            lastFmProfile.sync(user, allArtists()).onSuccess { synced ->
+                store.saveLastFmUsername(synced.username)
+                store.saveLastFmProfileSeeds(synced.seedArtists)
+                _lastFmProfileSeeds.value = synced.seedArtists
+
+                synced.inferredProfile?.let { inferred ->
+                    val before = _profile.value
+                    _profile.value = before.blend(inferred, .32f)
+                    store.saveProfile(_profile.value)
+                    registerDnaLearningChange(
+                        before,
+                        _profile.value,
+                        forceRegenerate = _dnaName.value.isBlank()
+                    )
+                }
+
+                var discoverySuffix = ""
+                externalDiscovery.discover(
+                    seeds = synced.seedArtists.take(5),
+                    limitPerSeed = 18
+                ).onSuccess { result ->
+                    _externalArtists.value = result.artists
+                    discoverySuffix = " / 類似Metal ${result.accepted}組追加"
+                }.onFailure {
+                    // Profile/DNA sync itself is still valid even if follow-up discovery fails.
+                    discoverySuffix = " / 類似発掘は次回再試行"
+                }
+
+                val summary = synced.summary + discoverySuffix
+                store.saveLastFmProfileSummary(summary)
+                _lastFmProfileStatus.value = summary
+                if (_dnaName.value.isBlank()) regenerateDnaName()
+                _recommendation.value = recommendNow(System.currentTimeMillis())
+                if (completeOnboarding) {
+                    store.markOnboardingCompleted()
+                    _onboardingComplete.value = true
+                }
+                scheduleCloudSync()
+            }.onFailure {
+                _lastFmProfileStatus.value = "Last.fm同期失敗: ${it.message}"
+            }
+            _lastFmProfileSyncing.value = false
+        }
+    }
+
+    fun startWithLastFmOnboarding(username: String) =
+        syncLastFmProfile(username, completeOnboarding = true)
+
+    fun clearLastFmProfile() {
+        store.clearLastFmProfile()
+        _lastFmProfileSeeds.value = emptyList()
+        _lastFmProfileStatus.value = "未連携"
+        scheduleCloudSync()
+    }
+
     fun externalCount() = _externalArtists.value.size
     fun dnaType(): String = _dnaName.value.ifBlank { engine.dnaType(_profile.value, _vocalProfile.value, _history.value) }
     fun dnaRegenerationRemaining(): Int = (dnaRegenerationInterval - _dnaLearningChangeCount.value).coerceAtLeast(1)
@@ -469,10 +555,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun discoverySeeds(): List<String> {
         val strong = _history.value.filter { it.reaction.isStrongPositive }.map { it.artistName }
+        val lastFm = _lastFmProfileSeeds.value
         val partial = _history.value.filter { it.reaction == Reaction.SOME }.map { it.artistName }
         val searched = _searchHistory.value.map { it.artistName }
         val profileSeeds = MetalCatalog.artists.sortedByDescending { _profile.value.similarity(it.vector) }.map { it.name }
-        return (strong + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
+        return (strong + lastFm + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
     }
 
     private fun allArtists(): List<MetalArtist> = (MetalCatalog.artists + _externalArtists.value)
@@ -673,6 +760,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _searchHistory.value = store.loadSearchHistory()
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
+        _lastFmProfileSeeds.value = store.loadLastFmProfileSeeds()
+        _lastFmProfileStatus.value = store.lastFmProfileSummary()
         _discoveryStatus.value = store.discoverySummary()
         _genreLensReady.value = currentLensPoolSatisfied() ||
             (store.lastFmApiKey().isBlank() && lensUnratedCandidates().isNotEmpty())
