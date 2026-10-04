@@ -119,6 +119,10 @@ jobs:
           echo "An unsigned AAB was generated for build verification only." >> "$GITHUB_STEP_SUMMARY"
           echo "Configure METARANAI_KEYSTORE_B64, METARANAI_KEYSTORE_PASSWORD, METARANAI_KEY_ALIAS and METARANAI_KEY_PASSWORD to generate the signed Play Store AAB." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check Google OAuth APK signing certificate
+        if: env.HAS_SIGNING_KEY == 'true'
+        run: python tools/check_google_apk_certificate.py "$ANDROID_HOME/build-tools/36.0.0/apksigner" app/build/outputs/apk/release/app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

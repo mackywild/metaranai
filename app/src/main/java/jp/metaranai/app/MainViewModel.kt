@@ -613,8 +613,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         accounts.signInEmail(email, password, create) { result -> viewModelScope.launch { handleAccountResult(result) } }
     }
 
+    private var googleSignInRunning = false
     fun signInGoogle(activity: android.app.Activity) {
-        viewModelScope.launch { handleAccountResult(accounts.signInGoogle(activity)) }
+        if (googleSignInRunning) return
+        googleSignInRunning = true
+        _accountStatus.value = "Googleログイン中…"
+        viewModelScope.launch {
+            try {
+                handleAccountResult(accounts.signInGoogle(activity))
+            } finally {
+                googleSignInRunning = false
+            }
+        }
     }
 
     fun signInFacebook(activity: android.app.Activity) {
@@ -700,7 +710,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }}
     }
 
-    fun signOutAccount() { accounts.signOut(); _account.value = null; _accountStatus.value = "ログアウトしました" }
+    fun signOutAccount() {
+        viewModelScope.launch {
+            accounts.signOut()
+            _account.value = null
+            _accountStatus.value = "ログアウトしました"
+        }
+    }
 
     fun deleteAccount() {
         accounts.deleteAccount { result -> viewModelScope.launch {
