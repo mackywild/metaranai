@@ -16,6 +16,20 @@ import java.net.URL
  */
 class LastFmProfileClient(private val store: LocalStore) {
 
+    // Public username existence check, not proof of account ownership.
+    suspend fun validateUsername(username: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(username.trim().isNotBlank()) { "Last.fmユーザー名を入力してください" }
+            require(store.lastFmApiKey().isNotBlank()) { "Last.fm接続基盤が未設定です" }
+            val response = lastFmGet(mapOf(
+                "method" to "user.getInfo", "user" to username.trim(),
+                "api_key" to store.lastFmApiKey(), "format" to "json"
+            ))
+            response.optJSONObject("user")?.optString("name")?.takeIf { it.isNotBlank() }
+                ?: error("Last.fmユーザーを確認できませんでした")
+        }
+    }
+
     suspend fun sync(
         username: String,
         knownArtists: List<MetalArtist>

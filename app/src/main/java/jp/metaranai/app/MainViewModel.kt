@@ -338,6 +338,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _deepDiveStatus.value = ""
     }
 
+    private val _connectionStatus = MutableStateFlow("")
+    val connectionStatus: StateFlow<String> = _connectionStatus
+    private val _connecting = MutableStateFlow(false)
+    val connecting: StateFlow<Boolean> = _connecting
+    fun spotifyConnected(): Boolean = store.token().isNotBlank() || store.refreshToken().isNotBlank()
+    fun lastFmUsernameVerified(): Boolean = store.lastFmUsername().isNotBlank() && store.verifiedLastFmUsername() == store.lastFmUsername()
+
+    fun connectSpotify(value: String) {
+        if (_connecting.value || _syncing.value || _lastFmProfileSyncing.value || _discovering.value) return
+        if (!value.trim().matches(Regex("[a-fA-F0-9]{32}"))) {
+            _connectionStatus.value = "Spotify Client IDを確認してください（32文字。ユーザー名ではありません）"
+            return
+        }
+        _connecting.value = true
+        store.saveClientId(value)
+        _connectionStatus.value = "Spotifyログインを確認中…"
+        viewModelScope.launch {
+            try {
+                spotify.connect { _connectionStatus.value = it }
+                    .onSuccess { _connectionStatus.value = "Spotify連携済み。解析・発掘は「探す」で実行できます。" }
+                    .onFailure { _connectionStatus.value = "Spotify連携失敗: ${it.message}" }
+            } finally { _connecting.value = false }
+        }
+    }
+
+    fun verifyLastFmUsername(value: String) {
+        if (_connecting.value || _syncing.value || _lastFmProfileSyncing.value || _discovering.value) return
+        _connecting.value = true
+        _connectionStatus.value = "Last.fmユーザー名を確認中…"
+        viewModelScope.launch {
+            try {
+                lastFmProfile.validateUsername(value).onSuccess { canonical ->
+                    saveLastFmUsername(canonical)
+                    store.saveVerifiedLastFmUsername(canonical)
+                    _connectionStatus.value = "Last.fmユーザー名を確認しました。本人認証は行っていません。解析・発掘は「探す」で実行できます。"
+                }.onFailure { _connectionStatus.value = "Last.fm連携確認失敗: ${it.message}" }
+            } finally { _connecting.value = false }
+        }
+    }
+
     fun clientId() = store.clientId()
     fun saveClientId(value: String) = store.saveClientId(value)
     fun lastFmApiKey() = store.lastFmApiKey()
@@ -359,7 +399,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Deep Dive pipeline is kept unchanged; this only adds long-term user taste seeds.
      */
     fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false) {
-        if (_lastFmProfileSyncing.value || _discovering.value) return
+        if (_lastFmProfileSyncing.value || _discovering.value || _connecting.value) return
         val user = username.trim()
         if (user.isBlank()) {
             _lastFmProfileStatus.value = "Last.fmユーザー名を入力してください"
@@ -575,7 +615,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .distinctBy { it.name.lowercase() }
 
     fun syncSpotify() {
-        if (_syncing.value) return
+        if (_syncing.value || _connecting.value) return
         _syncing.value = true
         viewModelScope.launch {
             val result = spotify.loginAndSync { _spotifyStatus.value = it }
