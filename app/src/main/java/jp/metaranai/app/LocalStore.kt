@@ -100,7 +100,17 @@ class LocalStore(context: Context) {
     }
 
     fun clientId(): String = (prefs.getString("spotify_client_id", "") ?: "").ifBlank { BuildConfig.SPOTIFY_CLIENT_ID }
-    fun saveClientId(value: String) = prefs.edit().putString("spotify_client_id", value.trim()).apply()
+    fun saveClientId(value: String) {
+        val next = value.trim().ifBlank { BuildConfig.SPOTIFY_CLIENT_ID }
+        val editor = prefs.edit().putString("spotify_client_id", value.trim())
+        if (next != clientId()) editor.remove("spotify_access_token").remove("spotify_refresh_token").remove("spotify_token_expiry")
+        editor.apply()
+    }
+    fun loadSpotifyTopArtists(): List<String> = runCatching {
+        val a = JSONArray(prefs.getString("spotify_top_artists_v011", "[]") ?: "[]")
+        (0 until a.length()).map { a.getString(it) }
+    }.getOrDefault(emptyList())
+    fun saveSpotifyTopArtists(names: List<String>) = prefs.edit().putString("spotify_top_artists_v011", JSONArray(names).toString()).apply()
     fun token(): String = prefs.getString("spotify_access_token", "") ?: ""
     fun saveToken(value: String) = prefs.edit().putString("spotify_access_token", value).apply()
     fun refreshToken(): String = prefs.getString("spotify_refresh_token", "") ?: ""

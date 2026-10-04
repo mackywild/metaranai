@@ -64,6 +64,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val spotifyStatus: StateFlow<String> = _spotifyStatus
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing
+    private val _spotifyTopArtists = MutableStateFlow(store.loadSpotifyTopArtists())
+    val spotifyTopArtists: StateFlow<List<String>> = _spotifyTopArtists
     private val _spotifySignals = MutableStateFlow<List<String>>(emptyList())
     val spotifySignals: StateFlow<List<String>> = _spotifySignals
     private val _spotifyOpenStatus = MutableStateFlow("")
@@ -342,6 +344,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveLastFmApiKey(value: String) = store.saveLastFmApiKey(value)
     fun lastFmConfigured(): Boolean = store.lastFmApiKey().isNotBlank()
     fun lastFmUsername(): String = store.lastFmUsername()
+    fun saveLastFmUsername(value: String) {
+        if (_lastFmProfileSyncing.value) return
+        if (value.trim() != store.lastFmUsername()) clearLastFmProfile()
+        store.saveLastFmUsername(value)
+        _lastFmProfileStatus.value = "ユーザー名を保存しました。検索タブから解析できます。"
+        scheduleCloudSync()
+    }
 
     /**
      * V0.11 optional Last.fm profile linkage.
@@ -571,6 +580,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = spotify.loginAndSync { _spotifyStatus.value = it }
             result.onSuccess { synced ->
+                store.saveSpotifyTopArtists(synced.topArtists)
+                _spotifyTopArtists.value = synced.topArtists
                 synced.inferredProfile?.let { inferred ->
                     val before = _profile.value
                     _profile.value = before.blend(inferred, .22f)
@@ -760,6 +771,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _searchHistory.value = store.loadSearchHistory()
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
+        _spotifyTopArtists.value = store.loadSpotifyTopArtists()
         _lastFmProfileSeeds.value = store.loadLastFmProfileSeeds()
         _lastFmProfileStatus.value = store.lastFmProfileSummary()
         _discoveryStatus.value = store.discoverySummary()

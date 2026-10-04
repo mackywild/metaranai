@@ -614,7 +614,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
             if (matched.isNotEmpty()) append(" ・ DNA一致${matched.size}組")
         }
         store.saveSpotifySummary(summary)
-        return SpotifySyncResult(summary, inferred, matched, genreSignals)
+        return SpotifySyncResult(summary, inferred, matched, genreSignals, topNames)
     }
 
     private fun weightedAverage(values: List<Pair<MetalVector, Float>>): MetalVector? {

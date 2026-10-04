@@ -51,6 +51,6 @@ for marker in [
 assert 'lastFmProfile.sync' not in deep
 assert '_lastFmProfileSeeds' not in deep
 
-assert 'versionCode = 30' in build
-assert 'versionName = "0.11.0"' in build
+assert 'versionCode = 31' in build
+assert 'versionName = "0.11.1"' in build
 print('V011_LASTFM_OPTIONAL_PROFILE_OK')
