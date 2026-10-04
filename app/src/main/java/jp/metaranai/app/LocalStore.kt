@@ -100,7 +100,17 @@ class LocalStore(context: Context) {
     }
 
     fun clientId(): String = (prefs.getString("spotify_client_id", "") ?: "").ifBlank { BuildConfig.SPOTIFY_CLIENT_ID }
-    fun saveClientId(value: String) = prefs.edit().putString("spotify_client_id", value.trim()).apply()
+    fun saveClientId(value: String) {
+        val next = value.trim().ifBlank { BuildConfig.SPOTIFY_CLIENT_ID }
+        val editor = prefs.edit().putString("spotify_client_id", value.trim())
+        if (next != clientId()) editor.remove("spotify_access_token").remove("spotify_refresh_token").remove("spotify_token_expiry")
+        editor.apply()
+    }
+    fun loadSpotifyTopArtists(): List<String> = runCatching {
+        val a = JSONArray(prefs.getString("spotify_top_artists_v011", "[]") ?: "[]")
+        (0 until a.length()).map { a.getString(it) }
+    }.getOrDefault(emptyList())
+    fun saveSpotifyTopArtists(names: List<String>) = prefs.edit().putString("spotify_top_artists_v011", JSONArray(names).toString()).apply()
     fun token(): String = prefs.getString("spotify_access_token", "") ?: ""
     fun saveToken(value: String) = prefs.edit().putString("spotify_access_token", value).apply()
     fun refreshToken(): String = prefs.getString("spotify_refresh_token", "") ?: ""
@@ -114,6 +124,8 @@ class LocalStore(context: Context) {
     fun saveLastFmApiKey(value: String) = prefs.edit().putString("lastfm_api_key", value.trim()).apply()
 
     // V0.11: optional Last.fm public-profile linkage. No Last.fm password/session is stored.
+    fun verifiedLastFmUsername(): String = prefs.getString("lastfm_verified_username_v011", "") ?: ""
+    fun saveVerifiedLastFmUsername(value: String) = prefs.edit().putString("lastfm_verified_username_v011", value).apply()
     fun lastFmUsername(): String = prefs.getString("lastfm_username_v011", "") ?: ""
     fun saveLastFmUsername(value: String) = prefs.edit().putString("lastfm_username_v011", value.trim()).apply()
     fun lastFmProfileSummary(): String = prefs.getString("lastfm_profile_summary_v011", "未連携") ?: "未連携"
@@ -133,6 +145,7 @@ class LocalStore(context: Context) {
     fun clearLastFmProfile() {
         prefs.edit()
             .remove("lastfm_username_v011")
+            .remove("lastfm_verified_username_v011")
             .remove("lastfm_profile_summary_v011")
             .remove("lastfm_profile_seeds_v011")
             .apply()

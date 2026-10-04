@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.Intent
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import kotlinx.coroutines.CancellationException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseApp
@@ -241,7 +245,12 @@ class AccountManager(private val context: Context, private val store: LocalStore
 
         val option = GetSignInWithGoogleOption.Builder(webClientId).build()
         val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
-        val response = CredentialManager.create(activity).getCredential(activity, request)
+        val response = try {
+            CredentialManager.create(activity).getCredential(activity, request)
+        } catch (e: GetCredentialException) {
+            // Reauth failures can be reported as cancellations. Do not retry without consent.
+            throw IllegalStateException(googleCredentialFailureMessage(e.message.orEmpty(), e is GetCredentialCancellationException), e)
+        }
         val credential = response.credential
         if (credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
             error("Google ID tokenを取得できませんでした")
@@ -309,9 +318,16 @@ class AccountManager(private val context: Context, private val store: LocalStore
         }
     }
 
-    fun signOut() {
+    suspend fun signOut() {
         auth?.signOut()
         store.clearLocalAccountSession()
+        try {
+            CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Firebase sign-out is complete even if the device provider cannot clear its session.
+        }
     }
 
     fun uploadState(session: AccountSession, json: String, done: (Result<Unit>) -> Unit) {

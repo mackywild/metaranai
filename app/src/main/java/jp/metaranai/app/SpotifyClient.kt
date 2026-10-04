@@ -23,6 +23,21 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     private var verifier: String = ""
     private var state: String = ""
 
+    // Authorization only: no listening history, DNA update or artist discovery.
+    suspend fun connect(onStatus: (String) -> Unit): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val clientId = store.clientId()
+            require(clientId.matches(Regex("[a-fA-F0-9]{32}"))) { "Spotify Client IDは32文字の英数字（16進数）です。ユーザー名ではありません" }
+            val token = when {
+                store.token().isNotBlank() && store.tokenExpiry() > System.currentTimeMillis() + 60_000 -> store.token()
+                store.refreshToken().isNotBlank() -> refreshAccessToken(clientId)
+                else -> authorize(clientId, onStatus)
+            }
+            getJson("https://api.spotify.com/v1/me", token)
+            Unit
+        }
+    }
+
     suspend fun loginAndSync(onStatus: (String) -> Unit): Result<SpotifySyncResult> = withContext(Dispatchers.IO) {
         runCatching {
             val clientId = store.clientId()
@@ -614,7 +629,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
             if (matched.isNotEmpty()) append(" ・ DNA一致${matched.size}組")
         }
         store.saveSpotifySummary(summary)
-        return SpotifySyncResult(summary, inferred, matched, genreSignals)
+        return SpotifySyncResult(summary, inferred, matched, genreSignals, topNames)
     }
 
     private fun weightedAverage(values: List<Pair<MetalVector, Float>>): MetalVector? {

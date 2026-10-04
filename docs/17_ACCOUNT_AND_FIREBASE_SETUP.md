@@ -150,3 +150,12 @@ python tools/check_v093_auth.py
 ```
 
 For a focused V0.9.3 checklist, see `docs/20_V093_AUTH_SETUP.md`.
+
+## Google reauthentication failures
+`[16] Account reauth failed` is a Credential Manager failure before Firebase token sign-in, not proof of one particular configuration fault. It may be reported as GetCredentialCancellationException. Do not automatically retry cancellation.
+
+1. CI's "Check Google OAuth APK signing certificate" prints the public certificate SHA-1/SHA-256 and compares it to the checked-in Android OAuth configuration. A mismatch is a configuration discrepancy to investigate; the live Google Cloud configuration is authoritative.
+2. Register the CI signing certificate for directly installed APKs. For Play installations register the Play **App signing** certificate as well, not only the upload certificate. Enable the Google provider and download updated google-services.json.
+3. If certificates/configuration match, verify the device Google account login state and Google Play services updates. Retry manually; another account can distinguish account-specific failures. No app data deletion is required.
+
+The explicit Google button flow remains GetSignInWithGoogleOption. Logout clears Credential Manager session state. UI diagnostics distinguish reauthentication failure, cancellation and other credential errors without exposing tokens or provider payloads.

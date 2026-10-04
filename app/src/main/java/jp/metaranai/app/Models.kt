@@ -161,7 +161,8 @@ data class SpotifySyncResult(
     val summary: String,
     val inferredProfile: MetalVector?,
     val matchedArtists: List<String>,
-    val genreSignals: List<String>
+    val genreSignals: List<String>,
+    val topArtists: List<String> = emptyList()
 )
 
 data class SpotifyArtistDestination(

@@ -64,6 +64,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val spotifyStatus: StateFlow<String> = _spotifyStatus
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing
+    private val _spotifyTopArtists = MutableStateFlow(store.loadSpotifyTopArtists())
+    val spotifyTopArtists: StateFlow<List<String>> = _spotifyTopArtists
     private val _spotifySignals = MutableStateFlow<List<String>>(emptyList())
     val spotifySignals: StateFlow<List<String>> = _spotifySignals
     private val _spotifyOpenStatus = MutableStateFlow("")
@@ -336,12 +338,59 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _deepDiveStatus.value = ""
     }
 
+    private val _connectionStatus = MutableStateFlow("")
+    val connectionStatus: StateFlow<String> = _connectionStatus
+    private val _connecting = MutableStateFlow(false)
+    val connecting: StateFlow<Boolean> = _connecting
+    fun spotifyConnected(): Boolean = store.token().isNotBlank() || store.refreshToken().isNotBlank()
+    fun lastFmUsernameVerified(): Boolean = store.lastFmUsername().isNotBlank() && store.verifiedLastFmUsername() == store.lastFmUsername()
+
+    fun connectSpotify(value: String) {
+        if (_connecting.value || _syncing.value || _lastFmProfileSyncing.value || _discovering.value) return
+        if (!value.trim().matches(Regex("[a-fA-F0-9]{32}"))) {
+            _connectionStatus.value = "Spotify Client IDを確認してください（32文字。ユーザー名ではありません）"
+            return
+        }
+        _connecting.value = true
+        store.saveClientId(value)
+        _connectionStatus.value = "Spotifyログインを確認中…"
+        viewModelScope.launch {
+            try {
+                spotify.connect { _connectionStatus.value = it }
+                    .onSuccess { _connectionStatus.value = "Spotify連携済み。解析・発掘は「探す」で実行できます。" }
+                    .onFailure { _connectionStatus.value = "Spotify連携失敗: ${it.message}" }
+            } finally { _connecting.value = false }
+        }
+    }
+
+    fun verifyLastFmUsername(value: String) {
+        if (_connecting.value || _syncing.value || _lastFmProfileSyncing.value || _discovering.value) return
+        _connecting.value = true
+        _connectionStatus.value = "Last.fmユーザー名を確認中…"
+        viewModelScope.launch {
+            try {
+                lastFmProfile.validateUsername(value).onSuccess { canonical ->
+                    saveLastFmUsername(canonical)
+                    store.saveVerifiedLastFmUsername(canonical)
+                    _connectionStatus.value = "Last.fmユーザー名を確認しました。本人認証は行っていません。解析・発掘は「探す」で実行できます。"
+                }.onFailure { _connectionStatus.value = "Last.fm連携確認失敗: ${it.message}" }
+            } finally { _connecting.value = false }
+        }
+    }
+
     fun clientId() = store.clientId()
     fun saveClientId(value: String) = store.saveClientId(value)
     fun lastFmApiKey() = store.lastFmApiKey()
     fun saveLastFmApiKey(value: String) = store.saveLastFmApiKey(value)
     fun lastFmConfigured(): Boolean = store.lastFmApiKey().isNotBlank()
     fun lastFmUsername(): String = store.lastFmUsername()
+    fun saveLastFmUsername(value: String) {
+        if (_lastFmProfileSyncing.value) return
+        if (value.trim() != store.lastFmUsername()) clearLastFmProfile()
+        store.saveLastFmUsername(value)
+        _lastFmProfileStatus.value = "ユーザー名を保存しました。検索タブから解析できます。"
+        scheduleCloudSync()
+    }
 
     /**
      * V0.11 optional Last.fm profile linkage.
@@ -350,7 +399,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Deep Dive pipeline is kept unchanged; this only adds long-term user taste seeds.
      */
     fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false) {
-        if (_lastFmProfileSyncing.value || _discovering.value) return
+        if (_lastFmProfileSyncing.value || _discovering.value || _connecting.value) return
         val user = username.trim()
         if (user.isBlank()) {
             _lastFmProfileStatus.value = "Last.fmユーザー名を入力してください"
@@ -566,11 +615,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .distinctBy { it.name.lowercase() }
 
     fun syncSpotify() {
-        if (_syncing.value) return
+        if (_syncing.value || _connecting.value) return
         _syncing.value = true
         viewModelScope.launch {
             val result = spotify.loginAndSync { _spotifyStatus.value = it }
             result.onSuccess { synced ->
+                store.saveSpotifyTopArtists(synced.topArtists)
+                _spotifyTopArtists.value = synced.topArtists
                 synced.inferredProfile?.let { inferred ->
                     val before = _profile.value
                     _profile.value = before.blend(inferred, .22f)
@@ -602,8 +653,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         accounts.signInEmail(email, password, create) { result -> viewModelScope.launch { handleAccountResult(result) } }
     }
 
+    private var googleSignInRunning = false
     fun signInGoogle(activity: android.app.Activity) {
-        viewModelScope.launch { handleAccountResult(accounts.signInGoogle(activity)) }
+        if (googleSignInRunning) return
+        googleSignInRunning = true
+        _accountStatus.value = "Googleログイン中…"
+        viewModelScope.launch {
+            try {
+                handleAccountResult(accounts.signInGoogle(activity))
+            } finally {
+                googleSignInRunning = false
+            }
+        }
     }
 
     fun signInFacebook(activity: android.app.Activity) {
@@ -689,7 +750,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }}
     }
 
-    fun signOutAccount() { accounts.signOut(); _account.value = null; _accountStatus.value = "ログアウトしました" }
+    fun signOutAccount() {
+        viewModelScope.launch {
+            accounts.signOut()
+            _account.value = null
+            _accountStatus.value = "ログアウトしました"
+        }
+    }
 
     fun deleteAccount() {
         accounts.deleteAccount { result -> viewModelScope.launch {
@@ -760,6 +827,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _searchHistory.value = store.loadSearchHistory()
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
+        _spotifyTopArtists.value = store.loadSpotifyTopArtists()
         _lastFmProfileSeeds.value = store.loadLastFmProfileSeeds()
         _lastFmProfileStatus.value = store.lastFmProfileSummary()
         _discoveryStatus.value = store.discoverySummary()

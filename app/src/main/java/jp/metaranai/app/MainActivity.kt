@@ -24,6 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -58,6 +62,7 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
         return
     }
     var tab by remember { mutableIntStateOf(0) }
+    var pendingLinkedSearch by remember { mutableStateOf<String?>(null) }
     val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")
     val icons = listOf("⚡", "🔎", "📚", "🧬", "⚙")
     MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
@@ -79,10 +84,10 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
             Box(Modifier.padding(pad).fillMaxSize()) {
                 when(tab) {
                     0 -> HomeScreen(vm)
-                    1 -> SearchScreen(vm)
+                    1 -> SearchScreen(vm, pendingLinkedSearch) { pendingLinkedSearch = null }
                     2 -> ArchiveScreen(vm)
                     3 -> DnaScreen(vm)
-                    else -> SettingsScreen(vm)
+                    else -> SettingsScreen(vm) { source -> pendingLinkedSearch = source; tab = 1 }
                 }
             }
         }
@@ -316,7 +321,16 @@ private fun ExternalMeta(a: MetalArtist) {
 }
 
 @Composable
-private fun SearchScreen(vm: MainViewModel) {
+private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSearchConsumed: () -> Unit = {}) {
+    LaunchedEffect(pendingSource) {
+        val source = pendingSource ?: return@LaunchedEffect
+        onSearchConsumed()
+        when (source) {
+            "spotify" -> vm.syncSpotify()
+            "lastfm" -> vm.syncLastFmProfile(vm.lastFmUsername())
+            "discovery" -> vm.syncExternalDiscovery()
+        }
+    }
     val history by vm.searchHistory.collectAsState()
     val remote by vm.remoteSearchResults.collectAsState()
     val suggestions by vm.remoteSearchSuggestions.collectAsState()
@@ -336,6 +350,7 @@ private fun SearchScreen(vm: MainViewModel) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header() }
+        item { LinkedDiscoveryControls(vm) }
         item {
             OutlinedTextField(
                 value = query,
@@ -620,8 +635,42 @@ private fun formatEvaluationDateTime(raw: String): String =
     raw.replace('T', ' ').let { if (it.length > 16) it.take(16) else it }
 
 
+private val SavedClientIdMask = VisualTransformation { text ->
+    TransformedText(AnnotatedString(maskClientId(text.text)), OffsetMapping.Identity)
+}
+
+@Composable
+private fun LinkedDiscoveryControls(vm: MainViewModel) {
+    val connecting by vm.connecting.collectAsState()
+    val syncing by vm.syncing.collectAsState()
+    val lastFmSyncing by vm.lastFmProfileSyncing.collectAsState()
+    val discovering by vm.discovering.collectAsState()
+    val spotifyStatus by vm.spotifyStatus.collectAsState()
+    val lastFmStatus by vm.lastFmProfileStatus.collectAsState()
+    val discoveryStatus by vm.discoveryStatus.collectAsState()
+    Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("連携した好みから探す", color = Acid, fontWeight = FontWeight.Bold)
+        Text("連携情報は設定で保存。ここから履歴を解析してDNAを更新し、未知のMetalを発掘できます。", color = Muted, fontSize = 11.sp)
+        Button(onClick = vm::syncSpotify, enabled = vm.clientId().isNotBlank() && !syncing && !lastFmSyncing && !discovering && !connecting, modifier = Modifier.fillMaxWidth()) {
+            Text(if (syncing) "Spotifyを解析中…" else "Spotifyにログインして好みを解析")
+        }
+        if (spotifyStatus.isNotBlank()) Text(spotifyStatus.substringBefore("Top:"), color = Muted, fontSize = 11.sp)
+        Button(onClick = { vm.syncLastFmProfile(vm.lastFmUsername()) }, enabled = vm.lastFmUsername().isNotBlank() && vm.lastFmConfigured() && !lastFmSyncing && !syncing && !discovering && !connecting, modifier = Modifier.fillMaxWidth()) {
+            Text(if (lastFmSyncing) "Last.fmを解析中…" else "Last.fm履歴から解析・発掘")
+        }
+        Text(lastFmStatus, color = Muted, fontSize = 11.sp)
+        Button(onClick = vm::syncExternalDiscovery, enabled = vm.lastFmConfigured() && !discovering && !syncing && !lastFmSyncing, modifier = Modifier.fillMaxWidth()) {
+            Text(if (discovering) "発掘中…" else "好みから未知のMetalを発掘")
+        }
+        if (discoveryStatus.isNotBlank()) Text(discoveryStatus, color = Muted, fontSize = 11.sp)
+    }
+}
+
 @Composable
 private fun DnaScreen(vm: MainViewModel) {
+    val topArtists by vm.spotifyTopArtists.collectAsState()
+    val spotifyStatus by vm.spotifyStatus.collectAsState()
+    val signals by vm.spotifySignals.collectAsState()
     val p by vm.profile.collectAsState()
     val metrics = listOf(
         "メロディ重視" to p.melody,
@@ -642,6 +691,16 @@ private fun DnaScreen(vm: MainViewModel) {
                 Text(vm.dnaType(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 5.dp))
             }
             Spacer(Modifier.height(10.dp))
+        }
+        item {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Spotify Topアーティスト", color = Acid, fontWeight = FontWeight.Bold)
+                Text("過去約6か月の上位アーティスト（最終同期時点）", color = Muted, fontSize = 11.sp)
+                if (topArtists.isEmpty()) Text("検索タブからSpotifyを解析すると表示されます。", color = Muted, fontSize = 12.sp)
+                topArtists.forEachIndexed { index, name -> Text("${index + 1}. $name", color = Color.White, fontSize = 12.sp) }
+                Text(spotifyStatus, color = Muted, fontSize = 11.sp)
+                signals.forEach { Text(it, color = Muted, fontSize = 11.sp) }
+            }
         }
         items(metrics) { (label, value) ->
             Column(Modifier.padding(horizontal = 20.dp, vertical = 7.dp)) {
@@ -665,7 +724,9 @@ private enum class SettingsPanel {
 private const val PRIVACY_POLICY_URL = "https://mackywild.github.io/metaranai/privacy-policy.html"
 
 @Composable
-private fun SettingsScreen(vm: MainViewModel) {
+private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit = {}) {
+    val connectionStatus by vm.connectionStatus.collectAsState()
+    val connecting by vm.connecting.collectAsState()
     val context = LocalContext.current
     val account by vm.account.collectAsState()
     val status by vm.spotifyStatus.collectAsState()
@@ -681,6 +742,7 @@ private fun SettingsScreen(vm: MainViewModel) {
     var openPanel by remember { mutableStateOf<SettingsPanel?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var clientId by remember { mutableStateOf(vm.clientId()) }
+    var clientIdSaved by remember { mutableStateOf(vm.clientId().isNotBlank()) }
     var lastFmUsername by remember { mutableStateOf(vm.lastFmUsername()) }
     var lastFmKey by remember { mutableStateOf("") }
 
@@ -876,81 +938,45 @@ private fun SettingsScreen(vm: MainViewModel) {
         }
 
         SettingsPanel.SPOTIFY -> SettingsDialogShell(
-            title = "Spotify連携",
-            onDismiss = { openPanel = null }
+            title = "Spotify連携", onDismiss = { openPanel = null }
         ) {
-            Text(
-                "Spotifyの視聴傾向を解析してMetal DNAへ反映します。",
-                color = Muted,
-                fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
+            Text("ここではログイン・連携確認だけを行います。履歴解析と発掘は「探す」、Topアーティストは「DNA」に表示します。", color = Muted, fontSize = 12.sp)
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://accounts.spotify.com/"))) }) { Text("Spotifyにログイン / 新規登録") }
+            if (BuildConfig.SPOTIFY_CLIENT_ID.isBlank()) {
+                Text("Client ID取得手順\n1. 開発者Dashboardにログイン\n2. アプリを作成／既存アプリを選択\n3. Redirect URIに http://127.0.0.1:8888/callback を登録して保存\n4. SettingsのClient IDをコピーして下に貼り付け", color = Muted, fontSize = 11.sp)
+                Text("Client IDはSpotifyのユーザー名とは別の、アプリ用IDです。Client Secretは入力しません。", color = Muted, fontSize = 11.sp)
+                TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://developer.spotify.com/dashboard"))) }) { Text("Client IDの取得ページを開く") }
+            } else {
+                Text("アプリ標準のClient IDを利用できます。取得・コピーは不要です。", color = Muted, fontSize = 11.sp)
+            }
             OutlinedTextField(
-                value = clientId,
-                onValueChange = { clientId = it },
-                label = { Text("Spotify Client ID") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                value = clientId, onValueChange = { clientId = it },
+                readOnly = clientIdSaved,
+                visualTransformation = if (clientIdSaved) SavedClientIdMask else VisualTransformation.None,
+                label = { Text("Spotify Client ID") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth(), enabled = !connecting && !syncing
             )
-            Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = {
-                    vm.saveClientId(clientId)
-                    vm.syncSpotify()
-                },
-                enabled = !syncing,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (syncing) "解析中…" else "Spotifyと接続してDNA更新")
+            Button(onClick = { vm.connectSpotify(clientId); clientIdSaved = clientId.trim().matches(Regex("[a-fA-F0-9]{32}")) }, enabled = clientId.isNotBlank() && !connecting && !syncing && !lastFmProfileSyncing && !discovering, modifier = Modifier.fillMaxWidth()) {
+                Text(if (connecting) "連携を確認中…" else if (vm.spotifyConnected()) "Spotify連携を確認" else "Spotifyにログインして連携")
             }
-            if (status.isNotBlank()) {
-                Text(status, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-            }
-            signals.forEach {
-                Text(it, color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
-            }
+            TextButton(onClick = { clientIdSaved = false; clientId = "" }, enabled = !connecting && !syncing) { Text("Client IDを変更") }
+            if (connectionStatus.startsWith("Spotify")) Text(connectionStatus, color = Muted, fontSize = 11.sp)
+            Button(onClick = { openPanel = null; onLinkedSearch("spotify") }, enabled = vm.spotifyConnected() && clientId.trim() == vm.clientId() && !connecting && !syncing && !lastFmProfileSyncing && !discovering, modifier = Modifier.fillMaxWidth()) { Text("「探す」へ移動して好みを解析") }
         }
 
         SettingsPanel.LASTFM -> SettingsDialogShell(
-            title = "Last.fm連携（任意）",
-            onDismiss = { openPanel = null }
+            title = "Last.fm連携（任意）", onDismiss = { openPanel = null }
         ) {
-            Text(
-                "Last.fmの公開視聴履歴から、長期・直近のMetal傾向をDNAと発掘Seedへ反映します。Last.fmのパスワードは不要で、ユーザー名だけを保存します。",
-                color = Muted,
-                fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = lastFmUsername,
-                onValueChange = { lastFmUsername = it },
-                label = { Text("Last.fmユーザー名") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = { vm.syncLastFmProfile(lastFmUsername) },
-                enabled = !lastFmProfileSyncing && lastFmUsername.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (lastFmProfileSyncing) "履歴を解析中…" else "Last.fm履歴でDNAを強化")
-            }
-            if (vm.lastFmUsername().isNotBlank()) {
-                TextButton(
-                    onClick = {
-                        vm.clearLastFmProfile()
-                        lastFmUsername = ""
-                    },
-                    enabled = !lastFmProfileSyncing,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Last.fmプロフィール紐付けを解除")
-                }
-            }
-            if (lastFmProfileStatus.isNotBlank()) {
-                Text(lastFmProfileStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-            }
+            Text("ここではユーザー名の存在を確認して保存します。Last.fm本人認証や履歴解析は行いません。履歴解析と発掘は「探す」で実行します。", color = Muted, fontSize = 12.sp)
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.last.fm/login"))) }) { Text("Last.fmにログイン") }
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.last.fm/join"))) }) { Text("Last.fmに新規登録") }
+            Text("ユーザー名の取得手順\n1. Last.fmにログイン／登録\n2. 自分のプロフィールを開く\n3. URLの /user/ の後ろのユーザー名を入力\n例: last.fm/user/metal_fan → metal_fan\nパスワード・API Keyの入力は不要です。登録直後は視聴履歴がまだ少ない場合があります。", color = Muted, fontSize = 11.sp)
+            OutlinedTextField(value = lastFmUsername, onValueChange = { lastFmUsername = it }, label = { Text("Last.fmユーザー名") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !connecting && !lastFmProfileSyncing)
+            Button(onClick = { vm.verifyLastFmUsername(lastFmUsername) }, enabled = lastFmUsername.isNotBlank() && vm.lastFmConfigured() && !connecting && !syncing && !lastFmProfileSyncing && !discovering, modifier = Modifier.fillMaxWidth()) { Text(if (connecting) "ユーザー名を確認中…" else "ユーザー名を確認して連携") }
+            if (!vm.lastFmConfigured()) Text("Last.fm接続基盤が未設定です。外部検索・発掘の設定を確認してください。", color = Muted, fontSize = 11.sp)
+            if (connectionStatus.startsWith("Last.fm")) Text(connectionStatus, color = Muted, fontSize = 11.sp)
+            Button(onClick = { openPanel = null; onLinkedSearch("lastfm") }, enabled = vm.lastFmUsernameVerified() && lastFmUsername.trim().equals(vm.lastFmUsername(), true) && !connecting && !syncing && !lastFmProfileSyncing && !discovering, modifier = Modifier.fillMaxWidth()) { Text("「探す」へ移動して解析・発掘") }
+            if (vm.lastFmUsername().isNotBlank()) TextButton(onClick = { vm.clearLastFmProfile(); lastFmUsername = "" }, enabled = !connecting && !lastFmProfileSyncing) { Text("Last.fm連携を解除") }
         }
 
         SettingsPanel.DISCOVERY -> SettingsDialogShell(
@@ -985,13 +1011,14 @@ private fun SettingsScreen(vm: MainViewModel) {
             Button(
                 onClick = {
                     if (lastFmKey.isNotBlank()) vm.saveLastFmApiKey(lastFmKey)
-                    vm.syncExternalDiscovery()
+
                 },
                 enabled = !discovering && (vm.lastFmConfigured() || lastFmKey.isNotBlank()),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (discovering) "外部を探索中…" else "未知のMetalを発掘")
+                Text("接続設定を保存")
             }
+            TextButton(onClick = { openPanel = null; onLinkedSearch("discovery") }, enabled = vm.lastFmConfigured() && !connecting && !discovering) { Text("「探す」へ移動して発掘") }
             if (discoveryStatus.isNotBlank()) {
                 Text(discoveryStatus, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
             }
