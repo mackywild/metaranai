@@ -38,7 +38,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
         }
     }
 
-    suspend fun loginAndSync(onStatus: (String) -> Unit): Result<SpotifySyncResult> = withContext(Dispatchers.IO) {
+    suspend fun loginAndSync(allowAuthorization: Boolean = true, onStatus: (String) -> Unit): Result<SpotifySyncResult> = withContext(Dispatchers.IO) {
         runCatching {
             val clientId = store.clientId()
             require(clientId.isNotBlank()) { "Spotify Client IDを設定してください" }
@@ -48,6 +48,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
                 onStatus("Spotifyセッションを更新中")
                 refreshAccessToken(clientId)
             } else {
+                check(allowAuthorization) { "設定のSpotify連携からログインしてください" }
                 authorize(clientId, onStatus)
             }
             syncSignals(token, onStatus)

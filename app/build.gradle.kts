@@ -18,8 +18,8 @@ android {
         applicationId = "jp.metaranai.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 31
-        versionName = "0.11.1"
+        versionCode = 32
+        versionName = "0.11.2"
     }
 
     if (hasReleaseSigning) {

@@ -326,8 +326,8 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
         val source = pendingSource ?: return@LaunchedEffect
         onSearchConsumed()
         when (source) {
-            "spotify" -> vm.syncSpotify()
-            "lastfm" -> vm.syncLastFmProfile(vm.lastFmUsername())
+            "spotify" -> vm.syncSpotifyForSearch()
+            "lastfm" -> vm.syncLastFmProfile(vm.lastFmUsername(), showSearchResults = true)
             "discovery" -> vm.syncExternalDiscovery()
         }
     }
@@ -340,7 +340,16 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
     val deepDiveResults by vm.deepDiveResults.collectAsState()
     val deepDiveStatus by vm.deepDiveStatus.collectAsState()
     val deepDiving by vm.deepDiving.collectAsState()
+    val syncing by vm.syncing.collectAsState()
+    val lastFmSyncing by vm.lastFmProfileSyncing.collectAsState()
+    val discovering by vm.discovering.collectAsState()
+    val searchBusy = remoteSearching || syncing || lastFmSyncing || discovering
     var query by remember { mutableStateOf("") }
+    var deepDiveArtist by remember { mutableStateOf<MetalArtist?>(null) }
+    val openDeepDive: (MetalArtist) -> Unit = { artist ->
+        deepDiveArtist = artist
+        vm.deepDive(artist)
+    }
 
     val localResults = remember(query, external) { vm.search(query) }
     val merged = (localResults + remote).distinctBy { it.name.lowercase() }
@@ -350,11 +359,11 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header() }
-        item { LinkedDiscoveryControls(vm) }
         item {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it; vm.clearRemoteSearch() },
+                enabled = !searchBusy,
                 singleLine = true,
                 label = { Text("バンド名 / 国 / ジャンル") },
                 supportingText = { Text("半角スペース区切りはAND検索") },
@@ -363,12 +372,16 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = { vm.searchExternal(query) },
-                enabled = query.trim().length >= 2 && !remoteSearching,
+                enabled = query.trim().length >= 2 && !searchBusy,
                 modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
             ) {
                 Text(if (remoteSearching) "グローバル検索中…" else "グローバル検索")
             }
 
+
+        }
+        item { LinkedDiscoveryControls(vm, onSearchStarted = { query = "" }) }
+        item {
             if (remoteStatus.isNotBlank()) {
                 Text(
                     remoteStatus,
@@ -377,8 +390,7 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
                 )
             }
-
-            if (query.isNotBlank()) {
+            if (query.isNotBlank() || merged.isNotEmpty() || searchBusy) {
                 Text(
                     "検索結果 ${merged.size}件",
                     color = Muted,
@@ -392,7 +404,8 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
                 vm = vm,
                 artist = artist,
                 query = query,
-                deepDiving = deepDiving
+                deepDiving = deepDiving,
+                onDeepDive = openDeepDive
             )
         }
 
@@ -410,13 +423,10 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
                     vm = vm,
                     artist = artist,
                     query = query,
-                    deepDiving = deepDiving
+                    deepDiving = deepDiving,
+                    onDeepDive = openDeepDive
                 )
             }
-        }
-
-        if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
-            DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
         }
 
         if (history.isNotEmpty()) item {
@@ -425,6 +435,13 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
             Text(history.take(8).joinToString("  •  ") { it.artistName }, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp))
         }
     }
+    deepDiveArtist?.let { seed ->
+        SearchDeepDiveDialog(
+            vm, seed, deepDiveStatus, deepDiveResults, deepDiving,
+            onDeepDive = openDeepDive,
+            onDismiss = { deepDiveArtist = null; vm.clearDeepDive() }
+        )
+    }
 }
 
 @Composable
@@ -432,7 +449,8 @@ private fun SearchArtistCard(
     vm: MainViewModel,
     artist: MetalArtist,
     query: String,
-    deepDiving: Boolean
+    deepDiving: Boolean,
+    onDeepDive: (MetalArtist) -> Unit = { vm.deepDive(it) }
 ) {
     Column(
         Modifier
@@ -470,7 +488,7 @@ private fun SearchArtistCard(
             OutlinedButton(
                 onClick = {
                     vm.recordSearch(query.ifBlank { "discover" }, artist)
-                    vm.deepDive(artist)
+                    onDeepDive(artist)
                 },
                 enabled = !deepDiving,
                 modifier = Modifier.weight(.70f),
@@ -640,26 +658,47 @@ private val SavedClientIdMask = VisualTransformation { text ->
 }
 
 @Composable
-private fun LinkedDiscoveryControls(vm: MainViewModel) {
+private fun SearchDeepDiveDialog(
+    vm: MainViewModel,
+    seed: MetalArtist,
+    status: String,
+    results: List<MetalArtist>,
+    loading: Boolean,
+    onDeepDive: (MetalArtist) -> Unit,
+    onDismiss: () -> Unit
+) {
+    SettingsDialogShell(title = "詳細検索：${seed.name}", onDismiss = onDismiss) {
+        if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp)
+        if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+        results.forEach { artist ->
+            SearchArtistCard(vm, artist, seed.name, loading, onDeepDive)
+        }
+    }
+}
+
+@Composable
+private fun LinkedDiscoveryControls(vm: MainViewModel, onSearchStarted: () -> Unit) {
     val connecting by vm.connecting.collectAsState()
     val syncing by vm.syncing.collectAsState()
     val lastFmSyncing by vm.lastFmProfileSyncing.collectAsState()
     val discovering by vm.discovering.collectAsState()
+    val remoteSearching by vm.remoteSearching.collectAsState()
     val spotifyStatus by vm.spotifyStatus.collectAsState()
     val lastFmStatus by vm.lastFmProfileStatus.collectAsState()
     val discoveryStatus by vm.discoveryStatus.collectAsState()
+    val busy = syncing || lastFmSyncing || discovering || connecting || remoteSearching
     Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("連携した好みから探す", color = Acid, fontWeight = FontWeight.Bold)
-        Text("連携情報は設定で保存。ここから履歴を解析してDNAを更新し、未知のMetalを発掘できます。", color = Muted, fontSize = 11.sp)
-        Button(onClick = vm::syncSpotify, enabled = vm.clientId().isNotBlank() && !syncing && !lastFmSyncing && !discovering && !connecting, modifier = Modifier.fillMaxWidth()) {
-            Text(if (syncing) "Spotifyを解析中…" else "Spotifyにログインして好みを解析")
+        Text("取得した候補は下の検索結果に表示します。Spotifyのログイン・連携は設定で行ってください。", color = Muted, fontSize = 11.sp)
+        Button(onClick = { onSearchStarted(); vm.syncSpotifyForSearch() }, enabled = vm.spotifyConnected() && !busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (syncing) "Spotifyを解析中…" else "Spotifyの好みから探す")
         }
         if (spotifyStatus.isNotBlank()) Text(spotifyStatus.substringBefore("Top:"), color = Muted, fontSize = 11.sp)
-        Button(onClick = { vm.syncLastFmProfile(vm.lastFmUsername()) }, enabled = vm.lastFmUsername().isNotBlank() && vm.lastFmConfigured() && !lastFmSyncing && !syncing && !discovering && !connecting, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { onSearchStarted(); vm.syncLastFmProfile(vm.lastFmUsername(), showSearchResults = true) }, enabled = vm.lastFmUsernameVerified() && vm.lastFmConfigured() && !busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (lastFmSyncing) "Last.fmを解析中…" else "Last.fm履歴から解析・発掘")
         }
         Text(lastFmStatus, color = Muted, fontSize = 11.sp)
-        Button(onClick = vm::syncExternalDiscovery, enabled = vm.lastFmConfigured() && !discovering && !syncing && !lastFmSyncing, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { onSearchStarted(); vm.syncExternalDiscovery() }, enabled = vm.lastFmConfigured() && !busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (discovering) "発掘中…" else "好みから未知のMetalを発掘")
         }
         if (discoveryStatus.isNotBlank()) Text(discoveryStatus, color = Muted, fontSize = 11.sp)
@@ -696,7 +735,7 @@ private fun DnaScreen(vm: MainViewModel) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Spotify Topアーティスト", color = Acid, fontWeight = FontWeight.Bold)
                 Text("過去約6か月の上位アーティスト（最終同期時点）", color = Muted, fontSize = 11.sp)
-                if (topArtists.isEmpty()) Text("検索タブからSpotifyを解析すると表示されます。", color = Muted, fontSize = 12.sp)
+                if (topArtists.isEmpty()) Text("設定でSpotify連携後、「探す」で好みを解析すると表示されます。", color = Muted, fontSize = 12.sp)
                 topArtists.forEachIndexed { index, name -> Text("${index + 1}. $name", color = Color.White, fontSize = 12.sp) }
                 Text(spotifyStatus, color = Muted, fontSize = 11.sp)
                 signals.forEach { Text(it, color = Muted, fontSize = 11.sp) }
@@ -940,7 +979,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
         SettingsPanel.SPOTIFY -> SettingsDialogShell(
             title = "Spotify連携", onDismiss = { openPanel = null }
         ) {
-            Text("ここではログイン・連携確認だけを行います。履歴解析と発掘は「探す」、Topアーティストは「DNA」に表示します。", color = Muted, fontSize = 12.sp)
+            Text("Spotifyのログイン・連携はここで行います。連携後の好みの解析・検索は「探す」、Topアーティストは「DNA」に表示します。", color = Muted, fontSize = 12.sp)
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://accounts.spotify.com/"))) }) { Text("Spotifyにログイン / 新規登録") }
             if (BuildConfig.SPOTIFY_CLIENT_ID.isBlank()) {
                 Text("Client ID取得手順\n1. 開発者Dashboardにログイン\n2. アプリを作成／既存アプリを選択\n3. Redirect URIに http://127.0.0.1:8888/callback を登録して保存\n4. SettingsのClient IDをコピーして下に貼り付け", color = Muted, fontSize = 11.sp)
@@ -1050,7 +1089,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.0.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.2.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")

@@ -22,7 +22,9 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     suspend fun discover(
         seeds: List<String>,
         genreLenses: List<String> = emptyList(),
-        limitPerSeed: Int = 18
+        limitPerSeed: Int = 18,
+        excludedArtistNames: Set<String> = emptySet(),
+        fallbackGenres: List<String> = emptyList()
     ): Result<ExternalDiscoveryResult> = withContext(Dispatchers.IO) {
         runCatching {
             val key = store.lastFmApiKey()
@@ -38,7 +40,8 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                 getTopArtistsByTag(key, genre, 20).forEach { c -> mergeCandidate(merged, c) }
             }
 
-            val known = MetalCatalog.artists.map { it.name.lowercase() }.toSet()
+            val known = MetalCatalog.artists.map { it.name.lowercase() }.toSet() +
+                excludedArtistNames.map { it.trim().lowercase() }
             val shortlist = merged.values
                 .filterNot { it.name.lowercase() in known }
                 .filterNot { it.name.lowercase() in seeds.map { it.lowercase() } }
@@ -48,11 +51,34 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             val alreadyNames = store.loadExternalArtists().map { it.name.lowercase() }.toSet()
             val accepted = mutableListOf<MetalArtist>()
             shortlist.forEachIndexed { index, c ->
-                enrichCandidate(key, c, musicBrainzAllowed = index < 12, already = c.name.lowercase() in alreadyNames)?.let(accepted::add)
+                enrichCandidate(key, c, musicBrainzAllowed = index < 12, already = c.name.lowercase() in alreadyNames)?.takeIf { GenreLensCatalog.matches(it, genreLenses) }?.let(accepted::add)
             }
 
-            val combined = mergeCache(accepted)
-            ExternalDiscoveryResult(merged.size, accepted.size, combined.size, seeds.take(5), combined)
+            // Manual discovery must keep searching when similar artists are empty, known or non-metal.
+            // Genre pages are bounded; automatic pool maintenance remains a separate operation.
+            if (accepted.isEmpty() && fallbackGenres.isNotEmpty()) {
+                val attempted = shortlist.map { it.name.trim().lowercase() }.toMutableSet()
+                for (page in 1..3) {
+                    for (genre in fallbackGenres.distinct().take(4)) {
+                        val candidates = getTopArtistsByTag(key, genre, 50, page)
+                        candidates.forEach { mergeCandidate(merged, it) }
+                        for (candidate in candidates) {
+                            val name = candidate.name.trim().lowercase()
+                            if (name in known || seeds.any { it.equals(candidate.name, true) } || !attempted.add(name)) continue
+                            val enriched = enrichCandidate(key, candidate, musicBrainzAllowed = false,
+                                already = name in alreadyNames, forcedGenre = genre) ?: continue
+                            if (!GenreLensCatalog.matches(enriched, genreLenses)) continue
+                            accepted += enriched
+                            if (accepted.size >= 12) break
+                        }
+                        if (accepted.isNotEmpty()) break
+                    }
+                    if (accepted.isNotEmpty()) break
+                }
+            }
+            val eligible = accepted.filter { GenreLensCatalog.matches(it, genreLenses) }
+            val combined = mergeCache(eligible)
+            ExternalDiscoveryResult(merged.size, eligible.size, combined.size, seeds.take(5), combined, eligible)
         }
     }
 
@@ -340,7 +366,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     private data class LastFmArtistInfo(val listeners: Long?, val playcount: Long?, val mbid: String?)
 }
 
-data class ExternalDiscoveryResult(val fetched: Int, val accepted: Int, val cached: Int, val seeds: List<String>, val artists: List<MetalArtist>)
+data class ExternalDiscoveryResult(val fetched: Int, val accepted: Int, val cached: Int, val seeds: List<String>, val artists: List<MetalArtist>, val discoveredArtists: List<MetalArtist> = emptyList())
 
 
 data class GenrePoolResult(val genres: List<String>, val fetched: Int, val accepted: Int, val cached: Int, val counts: Map<String, Int>, val artists: List<MetalArtist>)

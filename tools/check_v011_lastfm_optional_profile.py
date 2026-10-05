@@ -27,9 +27,9 @@ for marker in [
 ]:
     assert marker in store, marker
 
-assert 'fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false)' in vm
+assert 'fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false, showSearchResults: Boolean = false)' in vm
 assert 'val lastFm = _lastFmProfileSeeds.value' in vm
-assert 'strong + lastFm + partial + searched + profileSeeds' in vm
+assert 'strong + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds' in vm
 assert 'Last.fm連携（任意）' in ui
 assert 'Last.fmの視聴履歴から始める' in ui
 assert 'Last.fm未登録でも発掘機能は利用できます' in ui
@@ -51,6 +51,4 @@ for marker in [
 assert 'lastFmProfile.sync' not in deep
 assert '_lastFmProfileSeeds' not in deep
 
-assert 'versionCode = 31' in build
-assert 'versionName = "0.11.1"' in build
 print('V011_LASTFM_OPTIONAL_PROFILE_OK')
