@@ -1,3 +1,13 @@
+# メタらない？ v0.11.2 — SEARCH & DISCOVERY FIXES
+
+- 「探す」は検索窓 → グローバル検索 → Spotify / Last.fm / 好みからの発掘 → 検索結果の順。
+- 連携先から取得したMetal候補を検索結果へ表示。検索を切り替えると前の結果をクリア。
+- Spotifyログインは設定で実施。「探す」は保存済みセッションだけで解析し、再認証が必要なら設定を案内。
+- 手動発掘はジャンル補充の候補数チェックで終了せず、類似候補と最大3ページのジャンル候補を探索。
+- 外部で新規候補を取得できない場合、固定ジャンル内の保存済み未評価候補を明示して表示。通信エラーと全候補評価済みは理由を表示。
+- 「探す」の深掘りは詳細検索ダイアログを開き、さらに掘ると同じダイアログの対象・結果を更新。
+- Android versionCode 32 / versionName 0.11.2。iOS実装と配布バージョンは変更なし。
+
 # メタらない？ v0.11.0 — OPTIONAL LAST.FM TASTE PROFILE
 
 V0.11.0は、既存Deep Diveを壊さず、Last.fmの公開視聴履歴を任意のパーソナライズ入力として追加するアップデートです。
@@ -47,8 +57,8 @@ Google/Email認証とCloud Storageは独立設定。詳細は `docs/17_ACCOUNT_A
 ## Compatibility
 - Android applicationId: `jp.metaranai.app`
 - Android SharedPreferences: `metaranai`
-- Android versionCode: 30
-- Android versionName: 0.11.0
+- Android versionCode: 32
+- Android versionName: 0.11.2
 - iOS Bundle ID: `jp.metaranai.ios`
 - iOS Version: 0.9.3
 - iOS Build: 21

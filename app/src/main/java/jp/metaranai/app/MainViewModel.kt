@@ -99,6 +99,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _reactionStatus = MutableStateFlow("")
     val reactionStatus: StateFlow<String> = _reactionStatus
 
+    private var deepDiveJob: Job? = null
     private val _deepDiveResults = MutableStateFlow<List<MetalArtist>>(emptyList())
     val deepDiveResults: StateFlow<List<MetalArtist>> = _deepDiveResults
     private val _deepDiveStatus = MutableStateFlow("")
@@ -192,11 +193,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun searchExternal(query: String) {
         val q = query.trim()
-        if (_remoteSearching.value) return
+        if (linkedSearchBusy()) return
         if (q.length < 2) {
             _remoteSearchStatus.value = "2文字以上入力してください"
             return
         }
+        clearRemoteSearch()
         _remoteSearching.value = true
         _remoteSearchStatus.value = "Last.fm / MusicBrainzから「$q」を探索中…"
         viewModelScope.launch {
@@ -302,7 +304,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _deepDiveResults.value = emptyList()
         _deepDiveStatus.value = "${artist.name} から地下を掘削中…"
         val rated = ratedArtistNames()
-        viewModelScope.launch {
+        deepDiveJob = viewModelScope.launch {
             externalDiscovery.discover(listOf(artist.name), limitPerSeed = 18).onSuccess { result ->
                 _externalArtists.value = result.artists
                 val direct = result.artists.filter { candidate ->
@@ -334,6 +336,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearDeepDive() {
+        deepDiveJob?.cancel()
+        _deepDiving.value = false
         _deepDiveResults.value = emptyList()
         _deepDiveStatus.value = ""
     }
@@ -398,8 +402,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Important: this is intentionally separate from deepDive(). The existing one-artist
      * Deep Dive pipeline is kept unchanged; this only adds long-term user taste seeds.
      */
-    fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false) {
-        if (_lastFmProfileSyncing.value || _discovering.value || _connecting.value) return
+    fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false, showSearchResults: Boolean = false) {
+        if (linkedSearchBusy() || _connecting.value) return
         val user = username.trim()
         if (user.isBlank()) {
             _lastFmProfileStatus.value = "Last.fmユーザー名を入力してください"
@@ -410,6 +414,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        if (showSearchResults) clearRemoteSearch()
         _lastFmProfileSyncing.value = true
         _lastFmProfileStatus.value = "Last.fm @$user の視聴傾向を解析中…"
         viewModelScope.launch {
@@ -432,13 +437,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 var discoverySuffix = ""
                 externalDiscovery.discover(
                     seeds = synced.seedArtists.take(5),
-                    limitPerSeed = 18
+                    limitPerSeed = 18,
+                    genreLenses = if (showSearchResults) activeGenres() else emptyList(),
+                    fallbackGenres = if (showSearchResults) fallbackDiscoveryGenres() else emptyList(),
+                    excludedArtistNames = if (showSearchResults) ratedArtistNames() else emptySet()
                 ).onSuccess { result ->
                     _externalArtists.value = result.artists
                     discoverySuffix = " / 類似Metal ${result.accepted}組追加"
+                    if (showSearchResults) publishDiscoveryResults(result.discoveredArtists)
                 }.onFailure {
                     // Profile/DNA sync itself is still valid even if follow-up discovery fails.
                     discoverySuffix = " / 類似発掘は次回再試行"
+                    if (showSearchResults) publishDiscoveryResults(emptyList(), "外部発掘失敗: ${it.message}")
                 }
 
                 val summary = synced.summary + discoverySuffix
@@ -578,25 +588,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun syncExternalDiscovery() {
-        if (_discovering.value) return
-        val genres = activeGenres()
-        if (genres.isNotEmpty()) {
-            ensureGenreLensPool(force = true)
-            return
+    private fun linkedSearchBusy(): Boolean =
+        _remoteSearching.value || _discovering.value || _syncing.value || _lastFmProfileSyncing.value
+
+    private fun fallbackDiscoveryGenres(): List<String> = activeGenres().ifEmpty {
+        GenreLensCatalog.lenses.sortedByDescending { _profile.value.similarity(it.vector) }
+            .take(3).map { it.name }
+    }
+
+    private fun publishDiscoveryResults(artists: List<MetalArtist>, failure: String = "") {
+        val rated = ratedArtistNames()
+        val selection = DiscoverySearchResults.choose(artists, allArtists(), _profile.value, activeGenres(), rated)
+        val results = selection.artists
+        _remoteSearchResults.value = results
+        _remoteSearchSuggestions.value = emptyList()
+        _remoteSearchStatus.value = when {
+            failure.isNotBlank() -> failure + if (results.isNotEmpty()) " / 保存済みの未評価候補を表示" else ""
+            selection.usedSavedCandidates && results.isNotEmpty() -> "外部の新規候補がないため、保存済みの未評価候補を表示"
+            results.isEmpty() -> "条件に合う未評価候補がありません。ジャンル固定を変更して再検索してください"
+            else -> ""
         }
+    }
+
+    fun syncExternalDiscovery() {
+        if (linkedSearchBusy()) return
+        val genres = activeGenres()
         val seeds = discoverySeeds()
+        clearRemoteSearch()
         _discovering.value = true
         _discoveryStatus.value = "外部発掘中: ${seeds.joinToString(" / ")}"
         viewModelScope.launch {
-            externalDiscovery.discover(seeds).onSuccess { result ->
+            externalDiscovery.discover(
+                seeds, genreLenses = genres,
+                excludedArtistNames = allArtists().map { it.name.trim().lowercase() }.toSet() + ratedArtistNames(),
+                fallbackGenres = fallbackDiscoveryGenres()
+            ).onSuccess { result ->
                 _externalArtists.value = result.artists
-                val summary = "候補${result.fetched}件 → Metal+Hidden判定${result.accepted}件 / Local DB ${result.cached}組"
+                publishDiscoveryResults(result.discoveredArtists)
+                val summary = if (result.accepted > 0) "未知のMetal ${result.accepted}組を発掘" else _remoteSearchStatus.value
                 _discoveryStatus.value = summary
                 store.saveDiscoverySummary(summary)
                 _recommendation.value = recommendNow()
             }.onFailure {
-                _discoveryStatus.value = "外部発掘失敗: ${it.message}"
+                publishDiscoveryResults(emptyList(), "外部発掘失敗: ${it.message}")
+                _discoveryStatus.value = _remoteSearchStatus.value
             }
             _discovering.value = false
         }
@@ -608,17 +643,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val partial = _history.value.filter { it.reaction == Reaction.SOME }.map { it.artistName }
         val searched = _searchHistory.value.map { it.artistName }
         val profileSeeds = MetalCatalog.artists.sortedByDescending { _profile.value.similarity(it.vector) }.map { it.name }
-        return (strong + lastFm + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
+        return (strong + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
     }
 
     private fun allArtists(): List<MetalArtist> = (MetalCatalog.artists + _externalArtists.value)
         .distinctBy { it.name.lowercase() }
 
-    fun syncSpotify() {
-        if (_syncing.value || _connecting.value) return
+    fun syncSpotify() = syncSpotifyInternal(showSearchResults = false)
+
+    fun syncSpotifyForSearch() = syncSpotifyInternal(showSearchResults = true)
+
+    private fun syncSpotifyInternal(showSearchResults: Boolean) {
+        if (linkedSearchBusy() || _connecting.value) return
+        if (showSearchResults) clearRemoteSearch()
         _syncing.value = true
         viewModelScope.launch {
-            val result = spotify.loginAndSync { _spotifyStatus.value = it }
+            val result = spotify.loginAndSync(allowAuthorization = !showSearchResults) { _spotifyStatus.value = it }
             result.onSuccess { synced ->
                 store.saveSpotifyTopArtists(synced.topArtists)
                 _spotifyTopArtists.value = synced.topArtists
@@ -633,10 +673,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     if (synced.matchedArtists.isNotEmpty()) add("一致: ${synced.matchedArtists.take(5).joinToString(" / ")}")
                     if (synced.genreSignals.isNotEmpty()) add("Genre: ${synced.genreSignals.take(5).joinToString(" / ")}")
                 }
+                if (showSearchResults) {
+                    externalDiscovery.discover(
+                        synced.topArtists.take(5), genreLenses = activeGenres(),
+                        fallbackGenres = fallbackDiscoveryGenres(),
+                        excludedArtistNames = ratedArtistNames()
+                    ).onSuccess { discovered ->
+                        _externalArtists.value = discovered.artists
+                        publishDiscoveryResults(discovered.discoveredArtists)
+                    }.onFailure {
+                        publishDiscoveryResults(emptyList(), "外部発掘失敗: ${it.message}")
+                    }
+                }
                 _spotifyStatus.value = "同期完了: ${synced.summary}"
                 _recommendation.value = recommendNow()
             }.onFailure {
                 _spotifyStatus.value = "同期失敗: ${it.message}"
+                if (showSearchResults) _remoteSearchStatus.value = "Spotify解析に失敗しました。設定のSpotify連携を確認してください"
             }
             _syncing.value = false
         }
