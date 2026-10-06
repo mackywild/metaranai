@@ -7,13 +7,17 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -21,10 +25,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.sin
+import kotlinx.coroutines.launch
 
 private val StoryAccent = Color(0xFFD6FF36)
 private data class ConnectionFrame(val title: String, val caption: String)
@@ -49,24 +57,49 @@ internal fun ConnectionStoryboard(lastFm: Boolean) {
         ConnectionFrame("好みが見える", "Metal DNAに\n好みを反映"),
         ConnectionFrame("未知と出会う", "好きな音楽から\nMetalを発掘")
     )
+    val pagerState = rememberPagerState(pageCount = { frames.size })
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("横にスワイプして、連携後の流れを見る →", color = Color(0xFFA4A4A4), fontSize = 11.sp)
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            pageSpacing = 12.dp,
+            verticalAlignment = Alignment.Top
+        ) { index ->
+            val frame = frames[index]
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF151515), shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(frame.title, color = StoryAccent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    ConnectionIllustration(index, lastFm) { progress.value }
+                    Text(frame.caption.replace("\n", ""), color = Color.White, fontSize = 13.sp)
+                }
+            }
+        }
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             frames.forEachIndexed { index, frame ->
-                if (index > 0) Text("→", color = StoryAccent, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 6.dp))
-                Surface(color = Color(0xFF151515), shape = RoundedCornerShape(12.dp)) {
-                    Column(
-                        Modifier.width(132.dp).padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text("${index + 1}  ${frame.title}", color = StoryAccent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        ConnectionIllustration(index, lastFm) { progress.value }
-                        Text(frame.caption, color = Color.White, fontSize = 12.sp)
-                    }
+                val selected = pagerState.currentPage == index
+                Box(
+                    Modifier.size(48.dp)
+                        .selectable(selected = selected, role = Role.Tab, onClick = {
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        })
+                        .semantics { contentDescription = "${index + 1} / ${frames.size}、${frame.title}" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(if (selected) 10.dp else 7.dp)
+                        .background(if (selected) StoryAccent else Color(0xFF747474), CircleShape))
                 }
             }
         }
@@ -76,7 +109,7 @@ internal fun ConnectionStoryboard(lastFm: Boolean) {
 
 @Composable
 private fun ConnectionIllustration(frame: Int, lastFm: Boolean, progress: () -> Float) {
-    Canvas(Modifier.fillMaxWidth().height(78.dp).clearAndSetSemantics { }) {
+    Canvas(Modifier.fillMaxWidth().height(100.dp).clearAndSetSemantics { }) {
         val time = progress()
         val turn = time * Math.PI.toFloat() * 2
         val scale = size.minDimension / 100f

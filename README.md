@@ -1,3 +1,8 @@
+# メタらない？ v0.11.6 — CONNECTION PAGER
+
+- Spotify / Last.fm連携の説明を1ページ1アニメーションのカードへ変更。横スワイプで切り替え、下の3つのドットで位置を表示・タップ移動。
+- Android versionCode 36 / versionName 0.11.6。
+
 # メタらない？ v0.11.5 — CONNECTION STORYBOARD
 
 - Spotify / Last.fmの「連携すると」を横に読む3コマのループアニメーションへ変更。音楽の履歴 → Metal DNA → 未知のMetal発掘を視覚化。
