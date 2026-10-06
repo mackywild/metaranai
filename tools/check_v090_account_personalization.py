@@ -16,7 +16,8 @@ assert 'fun signInGoogle' in acc and 'CredentialManager.create(activity)' in acc
 assert 'GOOGLE_WEB_CLIENT_ID' in gradle and 'credentials:1.6.0' in gradle and 'googleid:1.2.0' in gradle
 assert 'fun signInFacebook' in acc and 'FacebookAuthProvider.getCredential' in acc and 'facebook-login:18.3.0' in gradle
 assert 'apple.com' in acc and 'twitter.com' in acc
-assert 'vm.signInGoogle' in ui and 'vm.signInFacebook' in ui
+assert 'vm.signInGoogle' in ui and 'vm.signInFacebook' not in ui
+assert 'vm.signInProvider' not in ui
 assert 'FirebaseAuth' in acc and 'FirebaseStorage' in acc and 'metaranai-backup.json' in acc
 assert 'FIREBASE_STORAGE_BUCKET' in gradle and 'SPOTIFY_CLIENT_ID' in gradle and 'LASTFM_API_KEY' in gradle
 assert 'GOOGLE_WEB_CLIENT_ID' in workflow and 'FACEBOOK_APP_ID' in workflow

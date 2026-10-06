@@ -53,7 +53,7 @@ assert '既存メールでログイン' in ui
 assert 'val cloudConfigured: Boolean get() = accounts.cloudSyncConfigured' in vm
 assert 'if (!accounts.cloudSyncConfigured)' in vm
 assert 'ログインしました（クラウド同期は未設定）' in vm
-assert 'enabled = vm.cloudConfigured' in ui
+assert 'enabled = vm.cloudConfigured && ready' in ui
 assert 'ログインは利用可能です。クラウド同期のみ' in ui
 
 # CI must always emit an AAB artifact; only the signed artifact is Play-uploadable.
@@ -74,3 +74,13 @@ assert 'google-services.json' in docs
 assert 'Email/Password' in docs and 'Google' in docs
 
 print('V093_AUTH_OK')
+
+# Logout clears provider state, serializes authentication and ignores stale backup callbacks.
+assert 'clearGoogleCredentialState(activity ?: context)' in acc
+assert 'if (credentialStateNeedsClearing) clearGoogleCredentialState(activity)' in acc
+assert 'if (googleSignInRunning || _accountBusy.value) return' in vm
+assert 'generation != accountGeneration' in vm
+logout = vm[vm.index('    fun signOutAccount'):vm.index('    fun deleteAccount')]
+assert logout.index('running.forEach { it.join() }') < logout.index('store.clearPersonalData()')
+assert 'reloadFromStore(generateDna = false)' in logout
+assert '_onboardingComplete.value = false' in logout

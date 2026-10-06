@@ -12,18 +12,17 @@ assert 'private fun SettingsDialogShell' in settings
 assert 'AlertDialog(' in settings
 
 for title in [
-    'アカウント・同期',
+    'アカウント',
     'ジャンル固定',
     'Spotify連携',
-    '図鑑データ',
-    'バックアップ',
+    '同期・バックアップ',
     'プライバシーポリシー',
     'アカウント削除',
 ]:
     assert f'title = "{title}"' in settings, title
 
 # API configuration is a debug-only menu and dialog; discovery stays in Search.
-debug_menu = settings[settings.index('        if (BuildConfig.DEBUG) {'):settings.index('title = "図鑑データ"')]
+debug_menu = settings[settings.index('        if (BuildConfig.DEBUG) {'):settings.index('title = "同期・バックアップ"')]
 assert 'title = "外部検索・発掘（開発用）"' in debug_menu
 assert 'SettingsPanel.DISCOVERY -> if (BuildConfig.DEBUG) SettingsDialogShell(' in settings
 assert 'このバージョンではLast.fm連携を利用できません。' in settings
@@ -40,7 +39,7 @@ assert 'Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))' in settings
 
 # Account deletion is separated from the ordinary account dialog and kept at the bottom.
 assert settings.index('title = "プライバシーポリシー"') < settings.index('title = "アカウント削除"')
-account_content = ui[ui.index('private fun AccountSettingsContent'):ui.index('private fun formatCompact')]
+account_content = ui[ui.index('private fun AccountSettingsContent'):ui.index('private fun CloudBackupContent')]
 assert 'vm::deleteAccount' not in account_content
 assert 'showDeleteConfirm' in settings
 assert 'vm.deleteAccount()' in settings
@@ -55,3 +54,11 @@ assert 'CreateDocument("application/json")' in screen
 assert '分析データをバックアップ' in screen
 
 print('V098_SETTINGS_DIALOGS_OK')
+
+assert 'title = "図鑑データ"' not in settings
+assert 'SettingsPanel.ARCHIVE' not in settings
+assert 'vm::syncAccountNow' not in account_content
+assert 'vm::resolveCloudConflictUseCloud' not in account_content
+cloud = ui[ui.index('private fun CloudBackupContent'):ui.index('private fun formatCompact')]
+assert 'vm::syncAccountNow' in cloud and 'vm::resolveCloudConflictUseCloud' in cloud
+assert 'vm::setAutoCloudSync' in cloud

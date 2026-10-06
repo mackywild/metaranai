@@ -9,6 +9,8 @@ import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import com.google.firebase.storage.UploadTask
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseApp
@@ -53,6 +55,8 @@ class AccountManager(private val context: Context, private val store: LocalStore
     private var auth: FirebaseAuth? = null
     private var db: FirebaseFirestore? = null
     private var storage: FirebaseStorage? = null
+    private val uploads = mutableSetOf<UploadTask>()
+    private var credentialStateNeedsClearing = false
     private val facebookCallbackManager: CallbackManager = CallbackManager.Factory.create()
 
     private fun legacyFirebaseConfigured(): Boolean =
@@ -243,6 +247,8 @@ class AccountManager(private val context: Context, private val store: LocalStore
             error("Google認証用Web Client IDが未設定です。FirebaseでGoogleログインを有効化し、google-services.jsonを再取得してください")
         }
 
+        // Retry provider cleanup with the foreground Activity if logout cleanup failed.
+        if (credentialStateNeedsClearing) clearGoogleCredentialState(activity)
         val option = GetSignInWithGoogleOption.Builder(webClientId).build()
         val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
         val response = try {
@@ -318,16 +324,27 @@ class AccountManager(private val context: Context, private val store: LocalStore
         }
     }
 
-    suspend fun signOut() {
-        auth?.signOut()
-        store.clearLocalAccountSession()
+    private suspend fun clearGoogleCredentialState(context: Context) {
+        credentialStateNeedsClearing = true
         try {
-            CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
+            val cleared = withTimeoutOrNull(8_000) {
+                CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
+                true
+            }
+            credentialStateNeedsClearing = cleared != true
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            // Firebase sign-out is complete even if the device provider cannot clear its session.
+            // Keep the retry flag for the next explicit Google sign-in.
         }
+    }
+
+    suspend fun signOut(activity: Activity? = null) {
+        uploads.toList().forEach { it.cancel() }
+        uploads.clear()
+        auth?.signOut()
+        store.clearLocalAccountSession()
+        clearGoogleCredentialState(activity ?: context)
     }
 
     fun uploadState(session: AccountSession, json: String, done: (Result<Unit>) -> Unit) {
@@ -336,7 +353,10 @@ class AccountManager(private val context: Context, private val store: LocalStore
             return
         }
         val ref = bucket.reference.child("users/${session.uid}/metaranai-backup.json")
-        ref.putBytes(json.toByteArray(Charsets.UTF_8)).addOnSuccessListener {
+        val task = ref.putBytes(json.toByteArray(Charsets.UTF_8))
+        uploads.add(task)
+        task.addOnCompleteListener { uploads.remove(task) }
+        task.addOnSuccessListener {
             db?.collection("users")?.document(session.uid)?.set(
                 mapOf(
                     "format" to "metaranai-backup",

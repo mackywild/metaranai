@@ -7,7 +7,11 @@ assert 'applicationId = "jp.metaranai.app"' in app
 assert 'getSharedPreferences("metaranai"' in store
 for key in ['profile','history','search_history','external_artists','spotify_client_id','spotify_access_token','spotify_refresh_token','spotify_token_expiry','lastfm_api_key']:
     assert f'"{key}"' in store, key
-assert '.clear()' not in store
+# In-place updates and JSON import must never clear records. Only explicit logout may.
+logout = store[store.index('    fun clearPersonalData()'):store.index('    fun exportCloudBackupJson()')]
+assert 'prefs.edit().clear()' in logout
+assert 'archiveDb.replaceAll(emptyList())' in logout
+assert '.clear()' not in store.replace(logout, '')
 for key in ['genre_lens_v05','vocal_profile_v05','spotify_artist_links_v05']:
     assert key in store
 # Legacy 3-level migration must be explicitly preserved.
