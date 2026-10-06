@@ -881,12 +881,14 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
                 onClick = { openPanel = SettingsPanel.LASTFM }
             )
         }
-        item {
-            SettingsMenuItem(
-                title = "外部検索・発掘",
-                summary = if (vm.lastFmConfigured()) "Last.fm / MusicBrainz 発掘基盤: 利用可能" else "Last.fm API未設定",
-                onClick = { openPanel = SettingsPanel.DISCOVERY }
-            )
+        if (BuildConfig.DEBUG) {
+            item {
+                SettingsMenuItem(
+                    title = "外部検索・発掘（開発用）",
+                    summary = if (vm.lastFmConfigured()) "Last.fm / MusicBrainz 発掘基盤: 利用可能" else "Last.fm API未設定",
+                    onClick = { openPanel = SettingsPanel.DISCOVERY }
+                )
+            }
         }
         item {
             SettingsMenuItem(
@@ -1038,14 +1040,18 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             Text("ユーザー名の取得手順\n1. Last.fmにログイン／登録\n2. 自分のプロフィールを開く\n3. URLの /user/ の後ろのユーザー名を入力\n例: last.fm/user/metal_fan → metal_fan\nパスワード・API Keyの入力は不要です。登録直後は視聴履歴がまだ少ない場合があります。", color = Muted, fontSize = 11.sp)
             OutlinedTextField(value = lastFmUsername, onValueChange = { lastFmUsername = it }, label = { Text("Last.fmユーザー名") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !connecting && !lastFmProfileSyncing)
             Button(onClick = { vm.verifyLastFmUsername(lastFmUsername) }, enabled = lastFmUsername.isNotBlank() && vm.lastFmConfigured() && !connecting && !syncing && !lastFmProfileSyncing && !discovering, modifier = Modifier.fillMaxWidth()) { Text(if (connecting) "ユーザー名を確認中…" else "ユーザー名を確認して連携") }
-            if (!vm.lastFmConfigured()) Text("Last.fm接続基盤が未設定です。外部検索・発掘の設定を確認してください。", color = Muted, fontSize = 11.sp)
+            if (!vm.lastFmConfigured()) Text(
+                if (BuildConfig.DEBUG) "Last.fm接続基盤が未設定です。外部検索・発掘（開発用）の設定を確認してください。"
+                else "このバージョンではLast.fm連携を利用できません。",
+                color = Muted, fontSize = 11.sp
+            )
             if (connectionStatus.startsWith("Last.fm")) Text(connectionStatus, color = Muted, fontSize = 11.sp)
             Button(onClick = { openPanel = null; onLinkedSearch("lastfm") }, enabled = vm.lastFmUsernameVerified() && lastFmUsername.trim().equals(vm.lastFmUsername(), true) && !connecting && !syncing && !lastFmProfileSyncing && !discovering, modifier = Modifier.fillMaxWidth()) { Text("「探す」へ移動して解析・発掘") }
             if (vm.lastFmUsername().isNotBlank()) TextButton(onClick = { vm.clearLastFmProfile(); lastFmUsername = "" }, enabled = !connecting && !lastFmProfileSyncing) { Text("Last.fm連携を解除") }
         }
 
-        SettingsPanel.DISCOVERY -> SettingsDialogShell(
-            title = "外部検索・発掘",
+        SettingsPanel.DISCOVERY -> if (BuildConfig.DEBUG) SettingsDialogShell(
+            title = "外部検索・発掘（開発用）",
             onDismiss = { openPanel = null }
         ) {
             Text(
@@ -1115,7 +1121,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.6.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.7.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")

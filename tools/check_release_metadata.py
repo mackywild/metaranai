@@ -6,13 +6,13 @@ workflow = (root / '.github/workflows/android.yml').read_text()
 
 # Current release metadata belongs in one release-specific check.
 # Historical feature regression tests must not pin these values.
-assert 'versionCode = 36' in build
-assert 'versionName = "0.11.6"' in build
+assert 'versionCode = 37' in build
+assert 'versionName = "0.11.7"' in build
 
 for artifact in [
-    'metaranai-v0.11.6-apk',
-    'metaranai-v0.11.6-aab',
-    'metaranai-v0.11.6-aab-unsigned',
+    'metaranai-v0.11.7-apk',
+    'metaranai-v0.11.7-aab',
+    'metaranai-v0.11.7-aab-unsigned',
 ]:
     assert artifact in workflow, artifact
 

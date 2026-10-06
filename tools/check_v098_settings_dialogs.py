@@ -15,13 +15,19 @@ for title in [
     'アカウント・同期',
     'ジャンル固定',
     'Spotify連携',
-    '外部検索・発掘',
     '図鑑データ',
     'バックアップ',
     'プライバシーポリシー',
     'アカウント削除',
 ]:
     assert f'title = "{title}"' in settings, title
+
+# API configuration is a debug-only menu and dialog; discovery stays in Search.
+debug_menu = settings[settings.index('        if (BuildConfig.DEBUG) {'):settings.index('title = "図鑑データ"')]
+assert 'title = "外部検索・発掘（開発用）"' in debug_menu
+assert 'SettingsPanel.DISCOVERY -> if (BuildConfig.DEBUG) SettingsDialogShell(' in settings
+assert 'このバージョンではLast.fm連携を利用できません。' in settings
+assert 'title = "外部検索・発掘",' not in settings
 
 # Genre Lens is presented to users as a genre-fixing feature.
 assert 'title = "ジャンル固定"' in settings
