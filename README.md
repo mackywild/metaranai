@@ -1,3 +1,11 @@
+# メタらない？ v0.11.4 — TODAY DIRECT ACTIONS
+
+- 「今日」は従来どおりSpotify / YouTube / 評価 / 深掘りを直接実行。詳細ダイアログは開かない。
+- 「今日」の深掘り結果も従来の配信先ボタンを維持。
+- 「探す」「図鑑」はアーティストをタップして詳細から試聴・評価・再評価。
+- Spotify / YouTube押下時の検索・移動案内は引き続き非表示。
+- Android versionCode 34 / versionName 0.11.4。
+
 # メタらない？ v0.11.3 — ARTIST DETAILS & SPOTIFY PERIODS
 
 - アーティストをタップして詳細を開き、Spotify / YouTubeへ移動、評価・同日中の再評価が可能。
@@ -67,8 +75,8 @@ Google/Email認証とCloud Storageは独立設定。詳細は `docs/17_ACCOUNT_A
 ## Compatibility
 - Android applicationId: `jp.metaranai.app`
 - Android SharedPreferences: `metaranai`
-- Android versionCode: 33
-- Android versionName: 0.11.3
+- Android versionCode: 34
+- Android versionName: 0.11.4
 - iOS Bundle ID: `jp.metaranai.ios`
 - iOS Version: 0.9.3
 - iOS Build: 21
