@@ -17,9 +17,13 @@ assert 'vm.openYouTube(rec.artist, "mv")' not in home
 assert 'vm.openYouTube(rec.artist, "live")' not in home
 assert 'Text("MV")' not in home
 assert 'Text("ライブ")' not in home
-assert 'Color(0xFFFF0000)' in home
-assert 'Text("YouTube", color = Color.White)' in home
-assert 'spotifyOpen != "Spotify本人確認済み"' in home
+details = ui[ui.index('private fun ArtistDetailsDialog'):ui.index('private fun ArchiveScreen')]
+assert 'Color(0xFFFF0000)' in details
+assert 'Text("YouTube", color = Color.White' in details
+assert 'spotifyOpenStatus.collectAsState()' not in ui
+assert 'mediaOpenStatus.collectAsState()' not in ui
+assert 'SpotifyButton(' not in home
+assert 'onArtistDetails(rec.artist, "today")' in home
 assert 'WHY THIS ARTIST?' not in ui
 assert 'vocalFilter' not in ui
 assert 'NOT_FOUND("🔍 見つからなかった"' in models

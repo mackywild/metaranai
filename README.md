@@ -1,3 +1,13 @@
+# メタらない？ v0.11.3 — ARTIST DETAILS & SPOTIFY PERIODS
+
+- アーティストをタップして詳細を開き、Spotify / YouTubeへ移動、評価・同日中の再評価が可能。
+- 「探す」「図鑑」「深掘り結果」の一覧からの直接Spotify / YouTube遷移を廃止。深掘りは一覧で実行可能。
+- 配信先を開いた際の検索・移動案内を非表示化。「今日」の試聴も詳細ダイアログへ統一。
+- DNA画面でSpotify Topアーティストを約1か月 / 約6か月 / 約1年で切り替え。期間別に保存し、表示期間の切り替えはDNA再学習を行わない。
+- Spotify / Last.fm連携設定に、好みの解析・未知Metal発掘・ランキング比較など利用者向けの魅力を追加。
+- Android versionCode 33 / versionName 0.11.3。JSONバックアップ互換性を維持。iOSは変更なし。
+- Spotifyの期間はプロバイダー定義の概算（4週間 / 6か月 / 約1年）。公式仕様: https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks
+
 # メタらない？ v0.11.2 — SEARCH & DISCOVERY FIXES
 
 - 「探す」は検索窓 → グローバル検索 → Spotify / Last.fm / 好みからの発掘 → 検索結果の順。
@@ -57,8 +67,8 @@ Google/Email認証とCloud Storageは独立設定。詳細は `docs/17_ACCOUNT_A
 ## Compatibility
 - Android applicationId: `jp.metaranai.app`
 - Android SharedPreferences: `metaranai`
-- Android versionCode: 32
-- Android versionName: 0.11.2
+- Android versionCode: 33
+- Android versionName: 0.11.3
 - iOS Bundle ID: `jp.metaranai.ios`
 - iOS Version: 0.9.3
 - iOS Build: 21

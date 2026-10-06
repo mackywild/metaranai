@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -61,6 +62,11 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
         }
         return
     }
+    var selectedArtist by remember { mutableStateOf<MetalArtist?>(null) }
+    val openArtistDetails: (MetalArtist, String) -> Unit = { artist, query ->
+        vm.recordSearch(query, artist)
+        selectedArtist = artist
+    }
     var tab by remember { mutableIntStateOf(0) }
     var pendingLinkedSearch by remember { mutableStateOf<String?>(null) }
     val tabs = listOf("今日", "探す", "図鑑", "DNA", "設定")
@@ -83,13 +89,16 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
         ) { pad ->
             Box(Modifier.padding(pad).fillMaxSize()) {
                 when(tab) {
-                    0 -> HomeScreen(vm)
-                    1 -> SearchScreen(vm, pendingLinkedSearch) { pendingLinkedSearch = null }
-                    2 -> ArchiveScreen(vm)
+                    0 -> HomeScreen(vm, openArtistDetails)
+                    1 -> SearchScreen(vm, openArtistDetails, pendingLinkedSearch) { pendingLinkedSearch = null }
+                    2 -> ArchiveScreen(vm, openArtistDetails)
                     3 -> DnaScreen(vm)
                     else -> SettingsScreen(vm) { source -> pendingLinkedSearch = source; tab = 1 }
                 }
             }
+        }
+        selectedArtist?.let { artist ->
+            ArtistDetailsDialog(vm, artist, onDismiss = { selectedArtist = null })
         }
     }
 }
@@ -106,9 +115,8 @@ private fun Header() {
 }
 
 @Composable
-private fun HomeScreen(vm: MainViewModel) {
+private fun HomeScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, String) -> Unit) {
     val rec by vm.recommendation.collectAsState()
-    val spotifyOpen by vm.spotifyOpenStatus.collectAsState()
     val lens by vm.genreLens.collectAsState()
     val lensPreparing by vm.genreLensPreparing.collectAsState()
     val lensReady by vm.genreLensReady.collectAsState()
@@ -117,7 +125,6 @@ private fun HomeScreen(vm: MainViewModel) {
     val deepDiveResults by vm.deepDiveResults.collectAsState()
     val deepDiveStatus by vm.deepDiveStatus.collectAsState()
     val deepDiving by vm.deepDiving.collectAsState()
-    val mediaStatus by vm.mediaOpenStatus.collectAsState()
     val activeGenres = GenreLensCatalog.activeGenres(lens)
     val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
 
@@ -152,21 +159,11 @@ private fun HomeScreen(vm: MainViewModel) {
                 Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
                     Text("今日のメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Spacer(Modifier.height(18.dp))
-                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
+                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black, modifier = Modifier.clickable { onArtistDetails(rec.artist, "today") })
                     Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
                     Spacer(Modifier.height(22.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SpotifyButton(vm, rec.artist, Modifier.weight(1f))
-                        Button(
-                            onClick = { vm.openYouTube(rec.artist) },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFF0000),
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text("YouTube", color = Color.White)
-                        }
+                    Button(onClick = { onArtistDetails(rec.artist, "today") }, modifier = Modifier.fillMaxWidth()) {
+                        Text("詳細・試聴・評価")
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
@@ -176,16 +173,12 @@ private fun HomeScreen(vm: MainViewModel) {
                     ) {
                         Text(if (deepDiving) "探索中" else "⛏ 深掘り")
                     }
-                    if (spotifyOpen.isNotBlank() && spotifyOpen != "Spotify本人確認済み") {
-                        Text(spotifyOpen, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
-                    }
-                    if (mediaStatus.isNotBlank()) Text(mediaStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(onClick = vm::shuffle, modifier = Modifier.fillMaxWidth()) { Text("別のバンドを見る") }
                 }
             }
             if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
-                DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
+                DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving, onArtistDetails)
             }
             item {
                 Text("聴いた結果を教えてください", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
@@ -199,13 +192,13 @@ private fun HomeScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun ReactionSelector(onReaction: (Reaction) -> Unit) {
+private fun ReactionSelector(onReaction: (Reaction) -> Unit, selected: Reaction? = null) {
     val ratings = listOf(Reaction.LOVE_ALL, Reaction.HIT, Reaction.SOME, Reaction.MEH, Reaction.NO_INTEREST)
     Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         ratings.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 pair.forEach { r ->
-                    OutlinedButton(onClick = { onReaction(r) }, modifier = Modifier.weight(1f).heightIn(min = 58.dp)) {
+                    OutlinedButton(onClick = { onReaction(r) }, enabled = r != selected, modifier = Modifier.weight(1f).heightIn(min = 58.dp)) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(r.label, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                             Text(r.description, color = Muted, fontSize = 8.sp, maxLines = 1)
@@ -215,7 +208,7 @@ private fun ReactionSelector(onReaction: (Reaction) -> Unit) {
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        OutlinedButton(onClick = { onReaction(Reaction.NOT_FOUND) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+        OutlinedButton(onClick = { onReaction(Reaction.NOT_FOUND) }, enabled = selected != Reaction.NOT_FOUND, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(Reaction.NOT_FOUND.label, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 Text(Reaction.NOT_FOUND.description, color = Muted, fontSize = 8.sp)
@@ -274,7 +267,7 @@ private fun ScoreBreakdown(b: RecommendationBreakdown) {
 }
 
 @Composable
-private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<MetalArtist>, loading: Boolean) {
+private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<MetalArtist>, loading: Boolean, onArtistDetails: (MetalArtist, String) -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -289,16 +282,7 @@ private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<Metal
         }
         results.take(8).forEach { artist ->
             Spacer(Modifier.height(8.dp))
-            Column(Modifier.fillMaxWidth().background(Bg, RoundedCornerShape(14.dp)).padding(12.dp)) {
-                Text(artist.name, color = Color.White, fontWeight = FontWeight.Bold)
-                Text("${artist.country} • ${artist.genres.take(3).joinToString(" / ")} • HIDDEN ${artist.hiddenScore}", color = Muted, fontSize = 10.sp)
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SpotifyButton(vm, artist, Modifier.weight(1f), fontSize = 10)
-                    OutlinedButton(onClick = { vm.openYouTube(artist) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("YouTube", fontSize = 10.sp) }
-                    OutlinedButton(onClick = { vm.deepDive(artist) }, enabled = !loading, modifier = Modifier.weight(.72f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("⛏", fontSize = 11.sp) }
-                }
-            }
+            SearchArtistCard(vm, artist, "deep-dive", loading, onArtistDetails = onArtistDetails)
         }
     }
 }
@@ -321,7 +305,7 @@ private fun ExternalMeta(a: MetalArtist) {
 }
 
 @Composable
-private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSearchConsumed: () -> Unit = {}) {
+private fun SearchScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, String) -> Unit, pendingSource: String? = null, onSearchConsumed: () -> Unit = {}) {
     LaunchedEffect(pendingSource) {
         val source = pendingSource ?: return@LaunchedEffect
         onSearchConsumed()
@@ -405,7 +389,8 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
                 artist = artist,
                 query = query,
                 deepDiving = deepDiving,
-                onDeepDive = openDeepDive
+                onDeepDive = openDeepDive,
+                onArtistDetails = onArtistDetails
             )
         }
 
@@ -424,7 +409,8 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
                     artist = artist,
                     query = query,
                     deepDiving = deepDiving,
-                    onDeepDive = openDeepDive
+                    onDeepDive = openDeepDive,
+                    onArtistDetails = onArtistDetails
                 )
             }
         }
@@ -439,6 +425,7 @@ private fun SearchScreen(vm: MainViewModel, pendingSource: String? = null, onSea
         SearchDeepDiveDialog(
             vm, seed, deepDiveStatus, deepDiveResults, deepDiving,
             onDeepDive = openDeepDive,
+            onArtistDetails = onArtistDetails,
             onDismiss = { deepDiveArtist = null; vm.clearDeepDive() }
         )
     }
@@ -450,58 +437,66 @@ private fun SearchArtistCard(
     artist: MetalArtist,
     query: String,
     deepDiving: Boolean,
-    onDeepDive: (MetalArtist) -> Unit = { vm.deepDive(it) }
+    onDeepDive: (MetalArtist) -> Unit = { vm.deepDive(it) },
+    onArtistDetails: (MetalArtist, String) -> Unit
 ) {
-    Column(
-        Modifier
-            .padding(horizontal = 20.dp, vertical = 6.dp)
-            .fillMaxWidth()
-            .background(Card, RoundedCornerShape(18.dp))
-            .padding(16.dp)
+    val history by vm.history.collectAsState()
+    val record = history.firstOrNull { it.artistName.trim().equals(artist.name.trim(), true) }
+    Surface(
+        onClick = { onArtistDetails(artist, query.ifBlank { "discover" }) },
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth(),
+        color = Card,
+        shape = RoundedCornerShape(18.dp)
     ) {
-        Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
-        Spacer(Modifier.height(10.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SpotifyButton(
-                vm,
-                artist,
-                Modifier.weight(1.15f),
-                fontSize = 11,
-                onBeforeOpen = { vm.recordSearch(query.ifBlank { "discover" }, artist) }
-            )
-            Button(
-                onClick = {
-                    vm.recordSearch(query.ifBlank { "discover" }, artist)
-                    vm.openYouTube(artist)
-                },
-                modifier = Modifier.weight(1.15f),
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF0000),
-                    contentColor = Color.White
-                )
-            ) {
-                Text("YouTube", color = Color.White, fontSize = 11.sp, maxLines = 1)
-            }
-            OutlinedButton(
-                onClick = {
-                    vm.recordSearch(query.ifBlank { "discover" }, artist)
-                    onDeepDive(artist)
-                },
-                enabled = !deepDiving,
-                modifier = Modifier.weight(.70f),
-                contentPadding = PaddingValues(horizontal = 6.dp)
-            ) {
-                Text("⛏", maxLines = 1)
+        Column(Modifier.padding(16.dp)) {
+            Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
+            Text(record?.reaction?.label ?: "未評価", color = if (record == null) Muted else Acid, fontSize = 11.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("タップして詳細・試聴・評価", color = Muted, fontSize = 11.sp)
+                OutlinedButton(
+                    onClick = { vm.recordSearch(query.ifBlank { "discover" }, artist); onDeepDive(artist) },
+                    enabled = !deepDiving,
+                    contentPadding = PaddingValues(horizontal = 10.dp)
+                ) { Text("⛏ 深掘り", maxLines = 1, fontSize = 11.sp) }
             }
         }
     }
 }
 
 @Composable
-private fun ArchiveScreen(vm: MainViewModel) {
+private fun ArtistDetailsDialog(vm: MainViewModel, artist: MetalArtist, onDismiss: () -> Unit) {
+    val history by vm.history.collectAsState()
+    val record = history.firstOrNull { it.artistName.trim().equals(artist.name.trim(), true) }
+    var feedback by remember(artist.name) { mutableStateOf("") }
+    SettingsDialogShell(title = artist.name, onDismiss = onDismiss) {
+        Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
+        Text(artist.reason, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SpotifyButton(vm, artist, Modifier.weight(1f), fontSize = 11)
+            Button(
+                onClick = { vm.openYouTube(artist) },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000), contentColor = Color.White)
+            ) { Text("YouTube", color = Color.White, fontSize = 11.sp, maxLines = 1) }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(if (record == null) "このアーティストを評価" else "評価を変更", color = Acid, fontWeight = FontWeight.Bold)
+        Text(record?.reaction?.label ?: "未評価", color = Color.White, fontSize = 12.sp)
+        record?.let { Text("評価日時 ${formatEvaluationDateTime(it.date)}", color = Muted, fontSize = 10.sp) }
+        Spacer(Modifier.height(8.dp))
+        ReactionSelector(
+            selected = record?.reaction,
+            onReaction = { reaction ->
+                if (vm.rateArtist(artist, reaction)) feedback = "${reaction.label} を保存しました"
+            }
+        )
+        if (feedback.isNotBlank()) Text(feedback, color = Acid, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+@Composable
+private fun ArchiveScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, String) -> Unit) {
     val external by vm.externalArtists.collectAsState()
     val history by vm.history.collectAsState()
     val profile by vm.profile.collectAsState()
@@ -580,14 +575,14 @@ private fun ArchiveScreen(vm: MainViewModel) {
             Text("表示 ${visible.size}組 / 未評価 ${(archive.size - ratedCount).coerceAtLeast(0)}組", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         }
         if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
-            DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
+            DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving, onArtistDetails)
         }
         if (visible.isEmpty()) item {
             Text("条件に一致するArtistがいない。フィルターを緩めるか『探す』から地下を追加しよう。", color = Muted, modifier = Modifier.padding(20.dp))
         }
         items(visible, key = { it.name.lowercase() }) { artist ->
             val record = latestReaction[artist.name.trim().lowercase()]
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(16.dp)) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).clickable { onArtistDetails(artist, "archive") }.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -611,18 +606,7 @@ private fun ArchiveScreen(vm: MainViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SpotifyButton(vm, artist, Modifier.weight(1f), fontSize = 11)
-                    Button(
-                        onClick = { vm.openYouTube(artist) },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF0000),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Text("YouTube", color = Color.White, fontSize = 11.sp, maxLines = 1)
-                    }
+                    Text("タップして詳細・試聴・評価", color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
                     OutlinedButton(
                         onClick = { vm.deepDive(artist) },
                         enabled = !deepDiving,
@@ -665,13 +649,14 @@ private fun SearchDeepDiveDialog(
     results: List<MetalArtist>,
     loading: Boolean,
     onDeepDive: (MetalArtist) -> Unit,
+    onArtistDetails: (MetalArtist, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     SettingsDialogShell(title = "詳細検索：${seed.name}", onDismiss = onDismiss) {
         if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp)
         if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
         results.forEach { artist ->
-            SearchArtistCard(vm, artist, seed.name, loading, onDeepDive)
+            SearchArtistCard(vm, artist, seed.name, loading, onDeepDive, onArtistDetails)
         }
     }
 }
@@ -707,10 +692,12 @@ private fun LinkedDiscoveryControls(vm: MainViewModel, onSearchStarted: () -> Un
 
 @Composable
 private fun DnaScreen(vm: MainViewModel) {
-    val topArtists by vm.spotifyTopArtists.collectAsState()
-    val spotifyStatus by vm.spotifyStatus.collectAsState()
-    val signals by vm.spotifySignals.collectAsState()
+    val period by vm.spotifyTopPeriod.collectAsState()
+    val snapshot by vm.spotifyTopSnapshot.collectAsState()
+    val loading by vm.spotifyTopLoading.collectAsState()
+    val error by vm.spotifyTopError.collectAsState()
     val p by vm.profile.collectAsState()
+    LaunchedEffect(Unit) { vm.refreshSpotifyTopArtists() }
     val metrics = listOf(
         "メロディ重視" to p.melody,
         "疾走感" to p.speed,
@@ -734,11 +721,20 @@ private fun DnaScreen(vm: MainViewModel) {
         item {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Spotify Topアーティスト", color = Acid, fontWeight = FontWeight.Bold)
-                Text("過去約6か月の上位アーティスト（最終同期時点）", color = Muted, fontSize = 11.sp)
-                if (topArtists.isEmpty()) Text("設定でSpotify連携後、「探す」で好みを解析すると表示されます。", color = Muted, fontSize = 12.sp)
-                topArtists.forEachIndexed { index, name -> Text("${index + 1}. $name", color = Color.White, fontSize = 12.sp) }
-                Text(spotifyStatus, color = Muted, fontSize = 11.sp)
-                signals.forEach { Text(it, color = Muted, fontSize = 11.sp) }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SpotifyTopPeriod.entries.forEach { option ->
+                        FilterChip(selected = period == option, enabled = !loading,
+                            onClick = { vm.selectSpotifyTopPeriod(option) }, label = { Text(option.label, fontSize = 11.sp) })
+                    }
+                }
+                Text("${period.label}の上位アーティスト。期間はSpotifyによる概算です。", color = Muted, fontSize = 11.sp)
+                Text("期間の切り替えはランキング表示だけを更新します。", color = Muted, fontSize = 11.sp)
+                if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                if (snapshot.artists.isEmpty() && !loading) Text("この期間のデータはまだありません。Spotifyを連携して更新してください。", color = Muted, fontSize = 12.sp)
+                snapshot.artists.forEachIndexed { index, name -> Text("${index + 1}. $name", color = Color.White, fontSize = 12.sp) }
+                if (snapshot.fetchedAt.isNotBlank()) Text("最終取得 ${formatEvaluationDateTime(snapshot.fetchedAt)}", color = Muted, fontSize = 10.sp)
+                if (error.isNotBlank()) Text(error, color = Muted, fontSize = 11.sp)
+                OutlinedButton(onClick = vm::refreshSpotifyTopArtists, enabled = !loading && vm.spotifyConnected()) { Text("ランキングを更新") }
             }
         }
         items(metrics) { (label, value) ->
@@ -847,7 +843,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
         item {
             SettingsMenuItem(
                 title = "Spotify連携",
-                summary = if (vm.clientId().isBlank()) "未設定" else "Spotifyの視聴傾向をDNAへ反映",
+                summary = if (vm.clientId().isBlank()) "未設定" else "いつもの音楽から、好みに近い未知のMetalと出会う",
                 onClick = { openPanel = SettingsPanel.SPOTIFY }
             )
         }
@@ -855,9 +851,9 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             SettingsMenuItem(
                 title = "Last.fm連携（任意）",
                 summary = if (vm.lastFmUsername().isBlank()) {
-                    "長期の視聴履歴からDNAと発掘Seedを強化"
+                    "長年の好みを生かして、まだ知らないMetalを発掘"
                 } else {
-                    "@${vm.lastFmUsername()} の公開履歴を反映"
+                    "@${vm.lastFmUsername()} の好みから新しいMetalを発掘"
                 },
                 onClick = { openPanel = SettingsPanel.LASTFM }
             )
@@ -979,6 +975,9 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
         SettingsPanel.SPOTIFY -> SettingsDialogShell(
             title = "Spotify連携", onDismiss = { openPanel = null }
         ) {
+            Text("Spotifyを連携すると", color = Acid, fontWeight = FontWeight.Bold)
+            Text("・普段聴く音楽から好みを解析し、Metal DNAへ反映\n・好きなアーティストを手がかりに、未知のMetalを発掘\n・DNAで約1か月／約6か月／約1年のTopアーティストを比較", color = Color.White, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
             Text("Spotifyのログイン・連携はここで行います。連携後の好みの解析・検索は「探す」、Topアーティストは「DNA」に表示します。", color = Muted, fontSize = 12.sp)
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://accounts.spotify.com/"))) }) { Text("Spotifyにログイン / 新規登録") }
             if (BuildConfig.SPOTIFY_CLIENT_ID.isBlank()) {
@@ -1006,6 +1005,10 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
         SettingsPanel.LASTFM -> SettingsDialogShell(
             title = "Last.fm連携（任意）", onDismiss = { openPanel = null }
         ) {
+            Text("Last.fmを連携すると", color = Acid, fontWeight = FontWeight.Bold)
+            Text("・長年の視聴履歴と最近の再生傾向から、好みをより深く解析\n・Spotifyだけでは見えない好みもMetal DNAへ反映\n・よく聴くアーティストから、似た魅力を持つ未知のMetalを発掘", color = Color.White, fontSize = 12.sp)
+            Text("連携は任意です。Last.fmに記録済みの公開履歴を使うため、履歴が少ない場合は効果も限定されます。", color = Muted, fontSize = 11.sp)
+            Spacer(Modifier.height(8.dp))
             Text("ここではユーザー名の存在を確認して保存します。Last.fm本人認証や履歴解析は行いません。履歴解析と発掘は「探す」で実行します。", color = Muted, fontSize = 12.sp)
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.last.fm/login"))) }) { Text("Last.fmにログイン") }
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.last.fm/join"))) }) { Text("Last.fmに新規登録") }
@@ -1089,7 +1092,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.2.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.3.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")

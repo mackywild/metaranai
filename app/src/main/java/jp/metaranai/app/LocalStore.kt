@@ -111,6 +111,24 @@ class LocalStore(context: Context) {
         (0 until a.length()).map { a.getString(it) }
     }.getOrDefault(emptyList())
     fun saveSpotifyTopArtists(names: List<String>) = prefs.edit().putString("spotify_top_artists_v011", JSONArray(names).toString()).apply()
+    fun spotifyTopPeriod(): SpotifyTopPeriod = SpotifyTopPeriod.fromApiValue(prefs.getString("spotify_top_period_v0113", null))
+    fun saveSpotifyTopPeriod(period: SpotifyTopPeriod) = prefs.edit().putString("spotify_top_period_v0113", period.apiValue).apply()
+    fun loadSpotifyTopSnapshot(period: SpotifyTopPeriod): SpotifyTopSnapshot = runCatching {
+        val raw = prefs.getString("spotify_top_snapshot_v0113_${period.apiValue}", null)
+        if (raw == null) {
+            SpotifyTopSnapshot(period, if (period == SpotifyTopPeriod.HALF_YEAR) loadSpotifyTopArtists() else emptyList())
+        } else {
+            val json = JSONObject(raw)
+            val names = json.getJSONArray("artists")
+            SpotifyTopSnapshot(period, (0 until names.length()).map { names.getString(it) }, json.optString("fetchedAt"))
+        }
+    }.getOrElse { SpotifyTopSnapshot(period, emptyList()) }
+    fun saveSpotifyTopSnapshot(snapshot: SpotifyTopSnapshot) {
+        val json = JSONObject().apply {
+            put("artists", JSONArray(snapshot.artists)); put("fetchedAt", snapshot.fetchedAt)
+        }
+        prefs.edit().putString("spotify_top_snapshot_v0113_${snapshot.period.apiValue}", json.toString()).apply()
+    }
     fun token(): String = prefs.getString("spotify_access_token", "") ?: ""
     fun saveToken(value: String) = prefs.edit().putString("spotify_access_token", value).apply()
     fun refreshToken(): String = prefs.getString("spotify_refresh_token", "") ?: ""
