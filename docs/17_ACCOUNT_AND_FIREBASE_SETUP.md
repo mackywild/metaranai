@@ -159,3 +159,15 @@ For a focused V0.9.3 checklist, see `docs/20_V093_AUTH_SETUP.md`.
 3. If certificates/configuration match, verify the device Google account login state and Google Play services updates. Retry manually; another account can distinguish account-specific failures. No app data deletion is required.
 
 The explicit Google button flow remains GetSignInWithGoogleOption. Logout clears Credential Manager session state. UI diagnostics distinguish reauthentication failure, cancellation and other credential errors without exposing tokens or provider payloads.
+
+## Android v0.11.8 account and backup behavior
+
+Only Google and verified Email/Password are shown; Apple/Facebook/X UI is temporarily hidden.
+Account settings contain identity and login/logout. Sync & Backup contains cloud verification,
+conflict resolution, manual cloud save, opt-in automatic saves (30-second debounce), last save time,
+and compatible JSON export/import. Automatic saves default OFF and do not run during unresolved
+cloud verification, conflicts, migration or another upload. This is snapshot backup, not multi-device merging.
+Logout cancels pending work/uploads, ignores stale callbacks, clears personal preferences and the SQLite
+archive, and returns to onboarding. API configuration is retained. Cloud backups and exported files remain.
+Google credential state is cleared using the foreground Activity; failed cleanup is retried before the next
+explicit Google login. Device Google sign-out/sign-in still needs a real Android device smoke test.

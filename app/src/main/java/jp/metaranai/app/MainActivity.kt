@@ -56,6 +56,19 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MetaranaiApp(vm: MainViewModel = viewModel()) {
     val onboardingComplete by vm.onboardingComplete.collectAsState()
+    val loggingOut by vm.loggingOut.collectAsState()
+    if (loggingOut) {
+        MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
+            Column(Modifier.fillMaxSize().background(Bg).padding(24.dp),
+                verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text("ログアウトしています…", color = Color.White)
+                Text("端末の記録と連携情報を削除しています", color = Muted, fontSize = 12.sp)
+            }
+        }
+        return
+    }
     if (!onboardingComplete) {
         MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
             OnboardingScreen(vm)
@@ -776,7 +789,7 @@ private fun DnaScreen(vm: MainViewModel) {
 }
 
 private enum class SettingsPanel {
-    ACCOUNT, GENRE, ARCHIVE, DISCOVERY, SPOTIFY, LASTFM, BACKUP
+    ACCOUNT, GENRE, DISCOVERY, SPOTIFY, LASTFM, BACKUP
 }
 
 private const val PRIVACY_POLICY_URL = "https://mackywild.github.io/metaranai/privacy-policy.html"
@@ -851,7 +864,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
 
         item {
             SettingsMenuItem(
-                title = "アカウント・同期",
+                title = "アカウント",
                 summary = accountSummary,
                 onClick = { openPanel = SettingsPanel.ACCOUNT }
             )
@@ -892,15 +905,8 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
         }
         item {
             SettingsMenuItem(
-                title = "図鑑データ",
-                summary = "保存したバンド情報と図鑑の状態",
-                onClick = { openPanel = SettingsPanel.ARCHIVE }
-            )
-        }
-        item {
-            SettingsMenuItem(
-                title = "バックアップ",
-                summary = "JSON形式で書き出し・復元",
+                title = "同期・バックアップ",
+                summary = "クラウドへの保存・自動同期・JSONの書き出しと復元",
                 onClick = { openPanel = SettingsPanel.BACKUP }
             )
         }
@@ -940,7 +946,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
 
     when (openPanel) {
         SettingsPanel.ACCOUNT -> SettingsDialogShell(
-            title = "アカウント・同期",
+            title = "アカウント",
             onDismiss = { openPanel = null }
         ) {
             AccountSettingsContent(vm)
@@ -1095,33 +1101,21 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             }
         }
 
-        SettingsPanel.ARCHIVE -> SettingsDialogShell(
-            title = "図鑑データ",
-            onDismiss = { openPanel = null }
-        ) {
-            Text(
-                "発掘・検索したバンド情報をローカル図鑑として保持しています。",
-                color = Muted,
-                fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            Text("登録バンド: ${vm.archiveArtists().size}組", color = Color.White, fontSize = 12.sp)
-            Text("ジャンル: ${vm.archiveGenreCounts().size}系統", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
-            Text("閲覧・評価は下部の「図鑑」タブから行えます。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp))
-        }
-
         SettingsPanel.BACKUP -> SettingsDialogShell(
-            title = "バックアップ",
+            title = "同期・バックアップ",
             onDismiss = { openPanel = null }
         ) {
+            CloudBackupContent(vm)
+            Spacer(Modifier.height(16.dp))
+            Text("端末ファイルのバックアップ", color = Acid, fontWeight = FontWeight.Bold)
             Text(
-                "従来のmetaranai-backup JSON形式を維持し、古いバックアップからも復元できます。",
+                "図鑑・評価・DNAをJSONファイルに保存し、あとから復元できます。古いバックアップも利用できます。",
                 color = Muted,
                 fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.7.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.8.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")
@@ -1251,6 +1245,7 @@ private fun OnboardingScreen(vm: MainViewModel) {
     val activity = context as? Activity
     val account by vm.account.collectAsState()
     val status by vm.accountStatus.collectAsState()
+    val busy by vm.accountBusy.collectAsState()
     val lastFmStatus by vm.lastFmProfileStatus.collectAsState()
     val lastFmSyncing by vm.lastFmProfileSyncing.collectAsState()
     var selected by remember { mutableStateOf(setOf<String>()) }
@@ -1259,7 +1254,6 @@ private fun OnboardingScreen(vm: MainViewModel) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var createEmail by remember { mutableStateOf(true) }
-    var showOtherProviders by remember { mutableStateOf(false) }
 
     LazyColumn(Modifier.fillMaxSize().background(Bg), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -1274,7 +1268,7 @@ private fun OnboardingScreen(vm: MainViewModel) {
                 Text("アカウント", color = Acid, fontWeight = FontWeight.Bold)
                 if (account == null) {
                     Text("おすすめ", color = Muted, fontSize = 10.sp)
-                    Button(onClick = { activity?.let { vm.signInGoogle(it) } }, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { activity?.let { vm.signInGoogle(it) } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                         Text("Googleで続ける")
                     }
 
@@ -1287,24 +1281,13 @@ private fun OnboardingScreen(vm: MainViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Switch(createEmail, { createEmail = it }); Text(if (createEmail) "新規作成" else "ログイン", color = Color.White)
                         }
-                        Button(onClick = { vm.signInEmail(email, password, createEmail) }, modifier = Modifier.fillMaxWidth()) {
+                        Button(onClick = { vm.signInEmail(email, password, createEmail) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                             Text(if (createEmail) "確認メールを送信して登録" else "ログイン")
                         }
                         if (createEmail) Text("登録後、届いた確認メールのリンクを開いてからログインします。", color = Muted, fontSize = 10.sp)
                     }
 
-                    TextButton(onClick = { showOtherProviders = !showOtherProviders }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (showOtherProviders) "その他のログインを閉じる" else "その他のログイン")
-                    }
-                    if (showOtherProviders) {
-                        OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "apple.com") } }, modifier = Modifier.fillMaxWidth()) { Text("Appleで続ける") }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { activity?.let { vm.signInFacebook(it) } }, modifier = Modifier.weight(1f)) { Text("Facebook") }
-                            OutlinedButton(onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } }, modifier = Modifier.weight(1f)) { Text("X") }
-                        }
-                    }
-
-                    OutlinedButton(onClick = vm::signInGuest, modifier = Modifier.fillMaxWidth()) { Text("アカウントなしで試す") }
+                    OutlinedButton(onClick = vm::signInGuest, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("アカウントなしで試す") }
 
                     when {
                         !vm.authConfigured -> Text("※ Firebase Authentication未設定。Google/メール等を使うにはFirebase設定が必要です。ゲストは利用できます。", color = Muted, fontSize = 10.sp)
@@ -1358,13 +1341,12 @@ private fun AccountSettingsContent(vm: MainViewModel) {
     val activity = context as? Activity
     val account by vm.account.collectAsState()
     val status by vm.accountStatus.collectAsState()
-    val pending by vm.legacyMigrationPending.collectAsState()
-    val conflict by vm.cloudConflictPending.collectAsState()
+    val busy by vm.accountBusy.collectAsState()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
     Text(
-        "Google / Apple / Facebook / X / メールで記録を引き継げます。",
+        "Googleまたはメールでログインし、アカウント情報を確認できます。",
         color = Muted,
         fontSize = 12.sp
     )
@@ -1374,6 +1356,7 @@ private fun AccountSettingsContent(vm: MainViewModel) {
         Text("おすすめ", color = Muted, fontSize = 10.sp)
         Button(
             onClick = { activity?.let { vm.signInGoogle(it) } },
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Googleで続ける")
@@ -1395,30 +1378,17 @@ private fun AccountSettingsContent(vm: MainViewModel) {
         )
         Button(
             onClick = { vm.signInEmail(email, password, true) },
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("確認メールを送信して登録")
         }
         TextButton(
             onClick = { vm.signInEmail(email, password, false) },
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("既存メールでログイン")
-        }
-        Text("その他のログイン", color = Muted, fontSize = 10.sp)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(
-                onClick = { activity?.let { vm.signInProvider(it, "apple.com") } },
-                modifier = Modifier.weight(1f)
-            ) { Text("Apple") }
-            OutlinedButton(
-                onClick = { activity?.let { vm.signInFacebook(it) } },
-                modifier = Modifier.weight(1f)
-            ) { Text("Facebook") }
-            OutlinedButton(
-                onClick = { activity?.let { vm.signInProvider(it, "twitter.com") } },
-                modifier = Modifier.weight(1f)
-            ) { Text("X") }
         }
     } else {
         Text(
@@ -1432,58 +1402,10 @@ private fun AccountSettingsContent(vm: MainViewModel) {
             fontSize = 11.sp
         )
 
-        if (conflict) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "⚠ 端末とクラウドの両方に記録があります。自動上書きしません。",
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Button(
-                onClick = vm::resolveCloudConflictUseCloud,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("クラウド記録をこの端末へ復元")
-            }
-            OutlinedButton(
-                onClick = vm::resolveCloudConflictUseLocal,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("この端末の記録でクラウドを更新")
-            }
-        } else if (pending) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "この端末にV0.8以前の記録があります。クラウドへ引き継ぐまで端末データは変更しません。",
-                color = Color.White,
-                fontSize = 11.sp
-            )
-            Button(
-                onClick = vm::migrateLocalDataToAccount,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("この端末の記録をアカウントへ引き継ぐ")
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = vm::syncAccountNow,
-            enabled = vm.cloudConfigured,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("今すぐクラウド同期")
-        }
-        if (!vm.cloudConfigured) {
-            Text(
-                "クラウド同期はFirebase Storage設定後に利用できます。ログイン自体は有効です。",
-                color = Muted,
-                fontSize = 10.sp
-            )
-        }
+        Text("ログアウトすると端末の図鑑・評価・DNA・連携情報を削除します。クラウドに保存済みの記録は再ログインで復元できます。未同期の記録は先に同期・バックアップから保存してください。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
         OutlinedButton(
-            onClick = vm::signOutAccount,
+            onClick = { vm.signOutAccount(activity) },
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("ログアウト")
@@ -1501,16 +1423,84 @@ private fun AccountSettingsContent(vm: MainViewModel) {
             color = Muted,
             fontSize = 10.sp
         )
-        !vm.cloudConfigured -> Text(
-            "ログインは利用できますが、クラウド同期は現在無効です。",
-            color = Muted,
-            fontSize = 10.sp
-        )
+
     }
 
     if (status.isNotBlank()) {
         Text(status, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
     }
+}
+
+@Composable
+private fun CloudBackupContent(vm: MainViewModel) {
+    val account by vm.account.collectAsState()
+    val pending by vm.legacyMigrationPending.collectAsState()
+    val conflict by vm.cloudConflictPending.collectAsState()
+    val syncing by vm.cloudSyncing.collectAsState()
+    val busy by vm.accountBusy.collectAsState()
+    val automatic by vm.autoCloudSync.collectAsState()
+    val status by vm.cloudStatus.collectAsState()
+    val lastSync by vm.lastCloudSync.collectAsState()
+    val ready by vm.cloudReady.collectAsState()
+    Text("クラウドに記録を保存", color = Acid, fontWeight = FontWeight.Bold)
+    Text("図鑑・評価・DNAをアカウントに保存し、再ログイン時に復元します。複数端末の同時編集を自動で合成する機能ではありません。", color = Muted, fontSize = 12.sp)
+    if (account == null || account!!.isGuest) {
+        Text("クラウドへの保存にはアカウントからGoogleまたはメールでログインしてください。", color = Muted, fontSize = 11.sp)
+    } else {
+        if (conflict) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "⚠ 端末とクラウドの両方に記録があります。自動上書きしません。",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Button(
+                onClick = vm::resolveCloudConflictUseCloud,
+                enabled = !busy && !syncing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("クラウド記録をこの端末へ復元")
+            }
+            OutlinedButton(
+                onClick = vm::resolveCloudConflictUseLocal,
+                enabled = !busy && !syncing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("この端末の記録でクラウドを更新")
+            }
+        } else if (pending) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "この端末に未同期の記録があります。引き継ぐとクラウドに保存できます。",
+                color = Color.White,
+                fontSize = 11.sp
+            )
+            Button(
+                onClick = vm::migrateLocalDataToAccount,
+                enabled = !busy && !syncing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("この端末の記録をアカウントへ引き継ぐ")
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = automatic, onCheckedChange = vm::setAutoCloudSync,
+                enabled = vm.cloudConfigured && !busy)
+            Text("変更を自動でクラウドに保存", color = Color.White, fontSize = 12.sp)
+        }
+        Text("初期設定はOFF。ONにすると変更後30秒待ってまとめて保存します。通信・保存の利用量が増える場合があります。", color = Muted, fontSize = 11.sp)
+        Button(onClick = vm::syncAccountNow,
+            enabled = vm.cloudConfigured && ready && !busy && !syncing && !conflict && !pending,
+            modifier = Modifier.fillMaxWidth()) { Text(if (syncing) "クラウドに保存中…" else "今すぐクラウドに保存") }
+        OutlinedButton(onClick = vm::retryCloudCheck,
+            enabled = vm.cloudConfigured && !busy && !syncing,
+            modifier = Modifier.fillMaxWidth()) { Text("クラウドの記録を確認・復元") }
+        if (!vm.cloudConfigured) Text("クラウドへの保存は現在利用できません。JSONファイルへの保存は利用できます。", color = Muted, fontSize = 11.sp)
+        if (lastSync.isNotBlank()) Text("最終保存: $lastSync", color = Muted, fontSize = 11.sp)
+    }
+    if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp)
 }
 
 private fun formatCompact(n: Long): String = when {

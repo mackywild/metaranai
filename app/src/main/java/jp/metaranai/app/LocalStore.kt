@@ -508,12 +508,28 @@ class LocalStore(context: Context) {
     }
     fun clearLocalAccountSession() = prefs.edit().remove("account_v090_local_uid").remove("account_v090_name").apply()
 
+    fun autoCloudSyncEnabled(): Boolean = prefs.getBoolean("auto_cloud_sync_v0118", false)
+    fun saveAutoCloudSyncEnabled(value: Boolean) = prefs.edit().putBoolean("auto_cloud_sync_v0118", value).apply()
+    fun lastCloudSync(): String = prefs.getString("last_cloud_sync_v0118", "") ?: ""
+    fun saveLastCloudSync(value: String) = prefs.edit().putString("last_cloud_sync_v0118", value).apply()
+
+    /** Remove personal state, credentials and the SQLite mirror; keep app API configuration. */
+    fun clearPersonalData() {
+        val configuration = listOf("spotify_client_id", "lastfm_api_key")
+            .associateWith { prefs.getString(it, null) }
+        archiveDb.replaceAll(emptyList())
+        val editor = prefs.edit().clear()
+        configuration.forEach { (key, value) -> if (value != null) editor.putString(key, value) }
+        check(editor.commit()) { "端末データの削除に失敗しました" }
+    }
+
     fun exportCloudBackupJson(): String {
         val root = JSONObject(exportBackupJson())
         val p = root.getJSONObject("preferences")
         // Account cloud sync carries recommendation/history state, not reusable login credentials.
         listOf("spotify_access_token", "spotify_refresh_token", "spotify_token_expiry",
-            "account_v090_local_uid", "account_v090_name").forEach { p.remove(it) }
+            "account_v090_local_uid", "account_v090_name",
+            "auto_cloud_sync_v0118", "last_cloud_sync_v0118").forEach { p.remove(it) }
         return root.toString(2)
     }
 

@@ -37,6 +37,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _cloudConflictPending = MutableStateFlow(false)
     val cloudConflictPending: StateFlow<Boolean> = _cloudConflictPending
     private var pendingCloudJson: String? = null
+    private var accountGeneration = 0
+    private val _cloudReady = MutableStateFlow(accounts.current() != null)
+    val cloudReady: StateFlow<Boolean> = _cloudReady
+    private var cloudRevision = 0L
+    private val _accountBusy = MutableStateFlow(false)
+    val accountBusy: StateFlow<Boolean> = _accountBusy
+    private val _loggingOut = MutableStateFlow(false)
+    val loggingOut: StateFlow<Boolean> = _loggingOut
+    private val _cloudSyncing = MutableStateFlow(false)
+    val cloudSyncing: StateFlow<Boolean> = _cloudSyncing
+    private val _cloudStatus = MutableStateFlow("")
+    val cloudStatus: StateFlow<String> = _cloudStatus
+    private val _autoCloudSync = MutableStateFlow(store.autoCloudSyncEnabled())
+    val autoCloudSync: StateFlow<Boolean> = _autoCloudSync
+    private val _lastCloudSync = MutableStateFlow(store.lastCloudSync())
+    val lastCloudSync: StateFlow<String> = _lastCloudSync
     val authConfigured: Boolean get() = accounts.authConfigured
     val googleConfigured: Boolean get() = accounts.googleConfigured
     val cloudConfigured: Boolean get() = accounts.cloudSyncConfigured
@@ -263,6 +279,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             externalDiscovery.searchArtists(q).onSuccess { result ->
                 _externalArtists.value = result.cachedArtists
+                scheduleCloudSync()
                 _remoteSearchResults.value = result.results
                 _remoteSearchSuggestions.value = result.suggestions
                 _remoteSearchStatus.value = if (result.results.isEmpty() && result.suggestions.isEmpty()) {
@@ -284,6 +301,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _remoteSearchResults.value = emptyList()
         _remoteSearchSuggestions.value = emptyList()
         _remoteSearchStatus.value = ""
+        _remoteSearching.value = false
     }
 
     fun recordSearch(query: String, artist: MetalArtist) {
@@ -687,6 +705,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val summary = if (result.accepted > 0) "未知のMetal ${result.accepted}組を発掘" else _remoteSearchStatus.value
                 _discoveryStatus.value = summary
                 store.saveDiscoverySummary(summary)
+                scheduleCloudSync()
                 _recommendation.value = recommendNow()
             }.onFailure {
                 publishDiscoveryResults(emptyList(), "外部発掘失敗: ${it.message}")
@@ -748,6 +767,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         publishDiscoveryResults(emptyList(), "外部発掘失敗: ${it.message}")
                     }
                 }
+                scheduleCloudSync()
                 _spotifyStatus.value = "同期完了: ${synced.summary}"
                 _recommendation.value = recommendNow()
             }.onFailure {
@@ -759,26 +779,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun signInGuest() {
+        if (_accountBusy.value) return
+        _accountBusy.value = true
         accounts.signInAnonymous { result -> viewModelScope.launch {
-            result.onSuccess { _account.value = it; _accountStatus.value = "ゲストで開始しました" }
-                .onFailure { _accountStatus.value = it.message ?: "ログイン失敗" }
+            try {
+                result.onSuccess { _account.value = it; _accountStatus.value = "ゲストで開始しました" }
+                    .onFailure { _accountStatus.value = it.message ?: "ログイン失敗" }
+            } finally { _accountBusy.value = false }
         }}
     }
 
     fun signInEmail(email: String, password: String, create: Boolean) {
-        accounts.signInEmail(email, password, create) { result -> viewModelScope.launch { handleAccountResult(result) } }
+        if (_accountBusy.value) return
+        _accountBusy.value = true
+        accounts.signInEmail(email, password, create) { result -> viewModelScope.launch {
+            try { handleAccountResult(result) } finally { _accountBusy.value = false }
+        } }
     }
 
     private var googleSignInRunning = false
     fun signInGoogle(activity: android.app.Activity) {
-        if (googleSignInRunning) return
+        if (googleSignInRunning || _accountBusy.value) return
         googleSignInRunning = true
+        _accountBusy.value = true
         _accountStatus.value = "Googleログイン中…"
         viewModelScope.launch {
             try {
                 handleAccountResult(accounts.signInGoogle(activity))
             } finally {
                 googleSignInRunning = false
+                _accountBusy.value = false
             }
         }
     }
@@ -797,6 +827,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun handleAccountResult(result: Result<AccountSession>) {
         result.onSuccess { session ->
             _account.value = session
+            _cloudReady.value = false
+            val generation = ++accountGeneration
+            cloudSyncJob?.cancel()
+            _cloudConflictPending.value = false
+            _legacyMigrationPending.value = false
+            pendingCloudJson = null
 
             // V0.9.3: Authentication is independent from Firebase Storage.
             // A valid Google/Email login must not fail just because cloud backup is not configured.
@@ -807,6 +843,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
             _accountStatus.value = "${session.provider}でログインしました"
             accounts.downloadState(session) { remote -> viewModelScope.launch {
+                if (generation != accountGeneration || _account.value?.uid != session.uid) return@launch
                 remote.onSuccess { json ->
                     when {
                         !json.isNullOrBlank() && store.hasPersonalData() -> {
@@ -815,7 +852,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             _accountStatus.value = "端末とクラウドの両方に記録があります。どちらを採用するか選んでください"
                         }
                         !json.isNullOrBlank() -> {
-                            store.importBackupJson(json).onSuccess { reloadFromStore(); _onboardingComplete.value = true; _accountStatus.value = "クラウドから記録を復元しました" }
+                            val restored = store.importBackupJson(json)
+                            if (restored.isFailure) {
+                                _cloudStatus.value = "クラウド復元失敗: ${restored.exceptionOrNull()?.message}"
+                                return@launch
+                            }
+                            reloadFromStore()
+                            _onboardingComplete.value = true
+                            _accountStatus.value = "クラウドから記録を復元しました"
                         }
                         store.hasPersonalData() -> {
                             _legacyMigrationPending.value = true
@@ -824,7 +868,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         else -> _accountStatus.value = "新規アカウントです。Metal DNAを作成しましょう"
                     }
-                }.onFailure { _accountStatus.value = "Cloud確認失敗: ${it.message}" }
+                    _cloudReady.value = !_cloudConflictPending.value && !_legacyMigrationPending.value
+                    _cloudStatus.value = if (_cloudReady.value) "クラウド確認完了" else "同期・バックアップで記録の引き継ぎ方法を選んでください"
+                    if (_cloudReady.value) scheduleCloudSync()
+                }.onFailure {
+                    _cloudStatus.value = "クラウド確認失敗: ${it.message}。再確認するまで送信を停止しています"
+                    _accountStatus.value = "ログインしました。クラウド確認に失敗したため同期・バックアップで再確認してください"
+                }
             }}
         }.onFailure { _accountStatus.value = it.message ?: "ログイン失敗" }
     }
@@ -834,43 +884,112 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val json = pendingCloudJson ?: return
         store.importBackupJson(json).onSuccess {
             reloadFromStore(); _cloudConflictPending.value = false; pendingCloudJson = null
-            _accountStatus.value = "クラウド記録をこの端末へ復元しました"
-        }.onFailure { _accountStatus.value = "クラウド復元失敗: ${it.message}" }
+            _cloudReady.value = true
+            _legacyMigrationPending.value = false
+            store.setLegacyAccountMigrationPending(false)
+            _onboardingComplete.value = true
+            _cloudStatus.value = "クラウド記録をこの端末へ復元しました"
+            scheduleCloudSync()
+        }.onFailure { _cloudStatus.value = "クラウド復元失敗: ${it.message}" }
     }
 
-    fun resolveCloudConflictUseLocal() {
-        val session = _account.value ?: return
-        accounts.uploadState(session, store.exportCloudBackupJson()) { result -> viewModelScope.launch {
-            if (result.isSuccess) {
-                _cloudConflictPending.value = false; pendingCloudJson = null
-                store.setLegacyAccountMigrationPending(false); _legacyMigrationPending.value = false
-                _accountStatus.value = "この端末の記録でクラウドを更新しました"
-            } else _accountStatus.value = "Cloud更新失敗: ${result.exceptionOrNull()?.message}"
-        }}
+    fun resolveCloudConflictUseLocal() = uploadCloudState(resolveLocal = true)
+
+    fun migrateLocalDataToAccount() = uploadCloudState(resolveLocal = true)
+
+    fun retryCloudCheck() {
+        if (_accountBusy.value || _cloudSyncing.value) return
+        _account.value?.let { handleAccountResult(Result.success(it)) }
     }
 
-    fun migrateLocalDataToAccount() {
+    fun setAutoCloudSync(value: Boolean) {
+        _autoCloudSync.value = value
+        store.saveAutoCloudSyncEnabled(value)
+        if (value) scheduleCloudSync() else cloudSyncJob?.cancel()
+    }
+
+    fun syncAccountNow() = uploadCloudState()
+
+    private fun uploadCloudState(resolveLocal: Boolean = false) {
         val session = _account.value ?: return
+        if (session.isGuest || !accounts.cloudSyncConfigured || _accountBusy.value || _cloudSyncing.value) return
+        if (resolveLocal && !_cloudConflictPending.value && !_legacyMigrationPending.value) return
+        if (!resolveLocal && (!_cloudReady.value || _cloudConflictPending.value || _legacyMigrationPending.value)) {
+            _cloudStatus.value = "クラウドの確認・記録の引き継ぎを先に完了してください"
+            return
+        }
+        cloudSyncJob?.cancel()
+        val generation = accountGeneration
+        val revision = cloudRevision
+        _cloudSyncing.value = true
+        _cloudStatus.value = "クラウドへ保存中…"
         accounts.uploadState(session, store.exportCloudBackupJson()) { result -> viewModelScope.launch {
+            if (generation != accountGeneration || _account.value?.uid != session.uid) return@launch
+            _cloudSyncing.value = false
             result.onSuccess {
-                store.setLegacyAccountMigrationPending(false); _legacyMigrationPending.value = false
-                _accountStatus.value = "端末データをアカウントへ引き継ぎました"
-            }.onFailure { _accountStatus.value = "引き継ぎ失敗: ${it.message}" }
-        }}
+                if (resolveLocal) {
+                    _cloudConflictPending.value = false
+                    pendingCloudJson = null
+                    store.setLegacyAccountMigrationPending(false)
+                    _legacyMigrationPending.value = false
+                    _cloudReady.value = true
+                }
+                val now = LocalDateTime.now().withNano(0).toString()
+                store.saveLastCloudSync(now)
+                _lastCloudSync.value = now
+                _cloudStatus.value = "クラウドへの保存が完了しました"
+                if (revision != cloudRevision) scheduleCloudSync()
+            }.onFailure { _cloudStatus.value = "同期失敗: ${it.message}。端末の記録は保持しています" }
+        } }
     }
 
-    fun syncAccountNow() {
-        val session = _account.value ?: run { _accountStatus.value = "先にログインしてください"; return }
-        accounts.uploadState(session, store.exportCloudBackupJson()) { result -> viewModelScope.launch {
-            _accountStatus.value = if (result.isSuccess) "クラウド同期完了" else "同期失敗: ${result.exceptionOrNull()?.message}"
-        }}
-    }
-
-    fun signOutAccount() {
+    fun signOutAccount(activity: android.app.Activity? = null) {
+        if (_accountBusy.value) return
+        _accountBusy.value = true
+        _loggingOut.value = true
+        ++accountGeneration // Ignore late Firebase callbacks from the previous account.
+        _cloudReady.value = false
+        val running = viewModelScope.coroutineContext[Job]?.children?.toList().orEmpty()
+        running.forEach { it.cancel() }
         viewModelScope.launch {
-            accounts.signOut()
-            _account.value = null
-            _accountStatus.value = "ログアウトしました"
+            try {
+                running.forEach { it.join() } // IO work must finish before clearing its stored results.
+                accounts.signOut(activity)
+                store.clearPersonalData()
+                _account.value = null
+                pendingCloudJson = null
+                _cloudConflictPending.value = false
+                _legacyMigrationPending.value = false
+                _cloudSyncing.value = false
+                _autoCloudSync.value = false
+                _lastCloudSync.value = ""
+                _cloudStatus.value = ""
+                reloadFromStore(generateDna = false)
+                _dnaName.value = ""
+                _spotifySignals.value = emptyList()
+                _spotifyAvailability.value = emptyMap()
+                _spotifyOpenStatus.value = ""
+                _mediaOpenStatus.value = ""
+                _connectionStatus.value = ""
+                _reactionStatus.value = ""
+                _backupStatus.value = ""
+                _syncing.value = false
+                _connecting.value = false
+                _spotifyTopLoading.value = false
+                _lastFmProfileSyncing.value = false
+                _discovering.value = false
+                _genreLensPreparing.value = false
+                clearRemoteSearch()
+                clearDeepDive()
+                _onboardingComplete.value = false
+                _accountStatus.value = "ログアウトし、端末の図鑑・評価・DNA・連携情報を削除しました"
+            } catch (e: Exception) {
+                _account.value = accounts.current()
+                _accountStatus.value = "ログアウト処理に失敗しました: ${e.message}"
+            } finally {
+                _loggingOut.value = false
+                _accountBusy.value = false
+            }
         }
     }
 
@@ -896,7 +1015,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         store.markOnboardingCompleted(); _onboardingComplete.value = true
         if (_dnaName.value.isBlank()) regenerateDnaName()
         _recommendation.value = recommendNow()
-        _account.value?.let { syncAccountNow() }
+        scheduleCloudSync()
     }
 
     fun startWithSpotifyOnboarding() {
@@ -930,14 +1049,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setBackupStatus(value: String) { _backupStatus.value = value }
 
-    private fun reloadFromStore() {
+    private fun reloadFromStore(generateDna: Boolean = true) {
+        _autoCloudSync.value = store.autoCloudSyncEnabled()
+        _lastCloudSync.value = store.lastCloudSync()
         _profile.value = store.loadProfile()
         _vocalProfile.value = store.loadVocalProfile()
         _genreLens.value = store.loadGenreLens()
         _history.value = store.loadHistory()
         _dnaName.value = store.generatedDnaName()
         _dnaLearningChangeCount.value = store.dnaLearningChangeCount().coerceIn(0, dnaRegenerationInterval - 1)
-        if (_dnaName.value.isBlank() || store.dnaNameGeneratorVersion() < DnaNameGenerator.VERSION) {
+        if (generateDna && (_dnaName.value.isBlank() || store.dnaNameGeneratorVersion() < DnaNameGenerator.VERSION)) {
             regenerateDnaName(resetCounter = false)
         }
         _searchHistory.value = store.loadSearchHistory()
@@ -1162,14 +1283,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun scheduleCloudSync() {
-        if (!accounts.cloudSyncConfigured || _account.value == null) return
+        ++cloudRevision
+        if (!CloudSyncPolicy.canUpload(_account.value?.isGuest != false,
+                accounts.cloudSyncConfigured, _cloudReady.value,
+                _cloudConflictPending.value || _legacyMigrationPending.value,
+                _accountBusy.value, _cloudSyncing.value) || !_autoCloudSync.value) return
         cloudSyncJob?.cancel()
         cloudSyncJob = viewModelScope.launch {
-            delay(1200)
-            val session = _account.value ?: return@launch
-            accounts.uploadState(session, store.exportCloudBackupJson()) { result -> viewModelScope.launch {
-                if (result.isFailure) _accountStatus.value = "自動同期失敗: ${result.exceptionOrNull()?.message}"
-            }}
+            delay(30_000) // Batch edits; no polling or constant network requests.
+            cloudSyncJob = null
+            uploadCloudState()
         }
     }
 
