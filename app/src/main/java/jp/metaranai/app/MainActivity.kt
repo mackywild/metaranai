@@ -999,7 +999,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             title = "Spotify連携", onDismiss = { openPanel = null }
         ) {
             Text("Spotifyを連携すると", color = Acid, fontWeight = FontWeight.Bold)
-            Text("・普段聴く音楽から好みを解析し、Metal DNAへ反映\n・好きなアーティストを手がかりに、未知のMetalを発掘\n・DNAで約1か月／約6か月／約1年のTopアーティストを比較", color = Color.White, fontSize = 12.sp)
+            ConnectionStoryboard(lastFm = false)
             Spacer(Modifier.height(8.dp))
             Text("Spotifyのログイン・連携はここで行います。連携後の好みの解析・検索は「探す」、Topアーティストは「DNA」に表示します。", color = Muted, fontSize = 12.sp)
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://accounts.spotify.com/"))) }) { Text("Spotifyにログイン / 新規登録") }
@@ -1029,7 +1029,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             title = "Last.fm連携（任意）", onDismiss = { openPanel = null }
         ) {
             Text("Last.fmを連携すると", color = Acid, fontWeight = FontWeight.Bold)
-            Text("・長年の視聴履歴と最近の再生傾向から、好みをより深く解析\n・Spotifyだけでは見えない好みもMetal DNAへ反映\n・よく聴くアーティストから、似た魅力を持つ未知のMetalを発掘", color = Color.White, fontSize = 12.sp)
+            ConnectionStoryboard(lastFm = true)
             Text("連携は任意です。Last.fmに記録済みの公開履歴を使うため、履歴が少ない場合は効果も限定されます。", color = Muted, fontSize = 11.sp)
             Spacer(Modifier.height(8.dp))
             Text("ここではユーザー名の存在を確認して保存します。Last.fm本人認証や履歴解析は行いません。履歴解析と発掘は「探す」で実行します。", color = Muted, fontSize = 12.sp)
@@ -1115,7 +1115,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.4.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.5.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")
