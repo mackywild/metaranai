@@ -66,6 +66,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val syncing: StateFlow<Boolean> = _syncing
     private val _spotifyTopArtists = MutableStateFlow(store.loadSpotifyTopArtists())
     val spotifyTopArtists: StateFlow<List<String>> = _spotifyTopArtists
+    private val _spotifyTopPeriod = MutableStateFlow(store.spotifyTopPeriod())
+    val spotifyTopPeriod: StateFlow<SpotifyTopPeriod> = _spotifyTopPeriod
+    private val _spotifyTopSnapshot = MutableStateFlow(store.loadSpotifyTopSnapshot(_spotifyTopPeriod.value))
+    val spotifyTopSnapshot: StateFlow<SpotifyTopSnapshot> = _spotifyTopSnapshot
+    private val _spotifyTopLoading = MutableStateFlow(false)
+    val spotifyTopLoading: StateFlow<Boolean> = _spotifyTopLoading
+    private val _spotifyTopError = MutableStateFlow("")
+    val spotifyTopError: StateFlow<String> = _spotifyTopError
     private val _spotifySignals = MutableStateFlow<List<String>>(emptyList())
     val spotifySignals: StateFlow<List<String>> = _spotifySignals
     private val _spotifyOpenStatus = MutableStateFlow("")
@@ -171,6 +179,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         showReactionStatus("${reaction.label} を記録しました")
         persistAndRefresh()
         refreshAfterReaction()
+    }
+
+    /** Details can appraise any artist, including a same-day reappraisal. */
+    fun rateArtist(artist: MetalArtist, reaction: Reaction): Boolean {
+        val record = DiscoveryRecord(artist.name, LocalDateTime.now().withNano(0).toString(), reaction,
+            (_profile.value.similarity(artist.vector) * 100).toInt())
+        val next = ArtistRatingHistory.record(_history.value, record)
+        if (next === _history.value) return false
+        if (allArtists().none { it.name.trim().equals(artist.name.trim(), true) }) {
+            _externalArtists.value = _externalArtists.value + artist
+            store.saveExternalArtists(_externalArtists.value)
+        }
+        _history.value = next
+        if (reaction != Reaction.NOT_FOUND) {
+            val before = _profile.value
+            _profile.value = engine.updatedProfile(before, artist, reaction)
+            _vocalProfile.value = VocalAnalyzer.update(_vocalProfile.value, artist.vocalType, reaction)
+            registerDnaLearningChange(before, _profile.value)
+        }
+        persistAndRefresh()
+        refreshAfterReaction()
+        return true
+    }
+
+    fun selectSpotifyTopPeriod(period: SpotifyTopPeriod) {
+        if (_spotifyTopLoading.value) return
+        _spotifyTopPeriod.value = period
+        store.saveSpotifyTopPeriod(period)
+        _spotifyTopSnapshot.value = store.loadSpotifyTopSnapshot(period)
+        refreshSpotifyTopArtists()
+    }
+
+    fun refreshSpotifyTopArtists() {
+        if (_spotifyTopLoading.value) return
+        val period = _spotifyTopPeriod.value
+        _spotifyTopError.value = ""
+        if (!spotifyConnected()) {
+            _spotifyTopError.value = "最新のランキングを取得するには設定でSpotifyを連携してください"
+            return
+        }
+        _spotifyTopLoading.value = true
+        viewModelScope.launch {
+            spotify.fetchTopArtists(period).onSuccess { names ->
+                val snapshot = SpotifyTopSnapshot(period, names, LocalDateTime.now().withNano(0).toString())
+                store.saveSpotifyTopSnapshot(snapshot)
+                if (_spotifyTopPeriod.value == period) _spotifyTopSnapshot.value = snapshot
+            }.onFailure {
+                _spotifyTopError.value = "ランキング取得失敗: ${it.message}。保存済みデータがあれば表示しています"
+            }
+            _spotifyTopLoading.value = false
+        }
     }
 
     fun shuffle() {
@@ -662,6 +721,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             result.onSuccess { synced ->
                 store.saveSpotifyTopArtists(synced.topArtists)
                 _spotifyTopArtists.value = synced.topArtists
+                val snapshot = SpotifyTopSnapshot(SpotifyTopPeriod.HALF_YEAR, synced.topArtists,
+                    LocalDateTime.now().withNano(0).toString())
+                store.saveSpotifyTopSnapshot(snapshot)
+                if (_spotifyTopPeriod.value == snapshot.period) _spotifyTopSnapshot.value = snapshot
                 synced.inferredProfile?.let { inferred ->
                     val before = _profile.value
                     _profile.value = before.blend(inferred, .22f)
@@ -881,6 +944,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _externalArtists.value = store.loadExternalArtists()
         _spotifyStatus.value = store.spotifySummary()
         _spotifyTopArtists.value = store.loadSpotifyTopArtists()
+        _spotifyTopPeriod.value = store.spotifyTopPeriod()
+        _spotifyTopSnapshot.value = store.loadSpotifyTopSnapshot(_spotifyTopPeriod.value)
+        _spotifyTopError.value = ""
         _lastFmProfileSeeds.value = store.loadLastFmProfileSeeds()
         _lastFmProfileStatus.value = store.lastFmProfileSummary()
         _discoveryStatus.value = store.discoverySummary()

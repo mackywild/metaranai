@@ -21,15 +21,18 @@ assert '_remoteSearchSuggestions' in vm
 assert '"もしかして…"' in ui
 
 # Search result cards are clean: no discovery/hidden/cache labels.
-search_block = ui[ui.index('private fun SearchScreen'):ui.index('private fun ArchiveScreen')]
+search_block = ui[ui.index('private fun SearchScreen'):ui.index('private fun ArtistDetailsDialog')]
 assert '発掘度' not in search_block
 assert 'HIDDEN' not in search_block
 assert 'ローカル図鑑へ保存済み' not in search_block
 assert '外部' not in search_block or '外部検索失敗' not in search_block
 
-# YouTube result action is red/white and forced to one line.
-assert 'containerColor = Color(0xFFFF0000)' in search_block
-assert 'Text("YouTube", color = Color.White' in search_block
+# Artist details now own media actions; result cards only open details or deep-dive.
+details = ui[ui.index('private fun ArtistDetailsDialog'):ui.index('private fun ArchiveScreen')]
+assert 'SpotifyButton(' not in search_block
+assert 'vm.openYouTube(' not in search_block
+assert 'containerColor = Color(0xFFFF0000)' in details
+assert 'Text("YouTube", color = Color.White' in details
 assert 'maxLines = 1' in search_block
 assert '半角スペース区切りはAND検索' in search_block
 

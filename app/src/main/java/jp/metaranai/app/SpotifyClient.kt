@@ -56,6 +56,21 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     }
 
 
+    /** Read-only DNA ranking refresh: uses an existing session and never authorizes or learns DNA. */
+    suspend fun fetchTopArtists(period: SpotifyTopPeriod): Result<List<String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val clientId = store.clientId()
+            val token = when {
+                store.token().isNotBlank() && store.tokenExpiry() > System.currentTimeMillis() + 60_000 -> store.token()
+                store.refreshToken().isNotBlank() -> refreshAccessToken(clientId)
+                else -> error("設定のSpotify連携からログインしてください")
+            }
+            val items = getJson("https://api.spotify.com/v1/me/top/artists?limit=20&time_range=${period.apiValue}", token)
+                .getJSONArray("items")
+            (0 until items.length()).mapNotNull { items.getJSONObject(it).optString("name").takeIf(String::isNotBlank) }
+        }
+    }
+
     /**
      * V0.6.4 Spotify Identity Resolver.
      *

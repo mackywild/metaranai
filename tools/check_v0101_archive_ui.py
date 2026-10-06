@@ -32,9 +32,13 @@ assert 'put("score",r.score)' in store
 assert 'Spotify本人確認済みリンク取得済み' not in archive
 assert 'spotifyLinkCached(artist)' not in archive
 
-# YouTube button uses the branded red/white treatment and stays on one line.
-assert 'containerColor = Color(0xFFFF0000)' in archive
-assert 'Text("YouTube", color = Color.White' in archive
-assert 'maxLines = 1' in archive
+# Media actions moved into artist details, keeping branded red/white YouTube styling.
+details = ui[ui.index('private fun ArtistDetailsDialog'):ui.index('private fun ArchiveScreen')]
+assert 'SpotifyButton(' not in archive
+assert 'vm.openYouTube(' not in archive
+assert 'onArtistDetails(artist, "archive")' in archive
+assert 'containerColor = Color(0xFFFF0000)' in details
+assert 'Text("YouTube", color = Color.White' in details
+assert 'maxLines = 1' in details
 
 print('V0101_ARCHIVE_UI_OK')
