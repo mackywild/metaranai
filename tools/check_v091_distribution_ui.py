@@ -22,8 +22,13 @@ assert 'Color(0xFFFF0000)' in details
 assert 'Text("YouTube", color = Color.White' in details
 assert 'spotifyOpenStatus.collectAsState()' not in ui
 assert 'mediaOpenStatus.collectAsState()' not in ui
-assert 'SpotifyButton(' not in home
-assert 'onArtistDetails(rec.artist, "today")' in home
+assert 'SpotifyButton(vm, rec.artist' in home
+assert 'vm.openYouTube(rec.artist)' in home
+assert 'ReactionSelector(onReaction = vm::react)' in home
+assert 'onArtistDetails' not in home
+assert '詳細・試聴・評価' not in home
+assert 'Modifier.clickable' not in home
+assert '0 -> HomeScreen(vm)' in ui
 assert 'WHY THIS ARTIST?' not in ui
 assert 'vocalFilter' not in ui
 assert 'NOT_FOUND("🔍 見つからなかった"' in models

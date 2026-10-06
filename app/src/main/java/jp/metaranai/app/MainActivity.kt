@@ -89,7 +89,7 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
         ) { pad ->
             Box(Modifier.padding(pad).fillMaxSize()) {
                 when(tab) {
-                    0 -> HomeScreen(vm, openArtistDetails)
+                    0 -> HomeScreen(vm)
                     1 -> SearchScreen(vm, openArtistDetails, pendingLinkedSearch) { pendingLinkedSearch = null }
                     2 -> ArchiveScreen(vm, openArtistDetails)
                     3 -> DnaScreen(vm)
@@ -115,7 +115,7 @@ private fun Header() {
 }
 
 @Composable
-private fun HomeScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, String) -> Unit) {
+private fun HomeScreen(vm: MainViewModel) {
     val rec by vm.recommendation.collectAsState()
     val lens by vm.genreLens.collectAsState()
     val lensPreparing by vm.genreLensPreparing.collectAsState()
@@ -159,11 +159,21 @@ private fun HomeScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, String)
                 Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
                     Text("今日のメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Spacer(Modifier.height(18.dp))
-                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black, modifier = Modifier.clickable { onArtistDetails(rec.artist, "today") })
+                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
                     Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
                     Spacer(Modifier.height(22.dp))
-                    Button(onClick = { onArtistDetails(rec.artist, "today") }, modifier = Modifier.fillMaxWidth()) {
-                        Text("詳細・試聴・評価")
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SpotifyButton(vm, rec.artist, Modifier.weight(1f))
+                        Button(
+                            onClick = { vm.openYouTube(rec.artist) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFF0000),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("YouTube", color = Color.White)
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
@@ -178,7 +188,7 @@ private fun HomeScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, String)
                 }
             }
             if (deepDiveStatus.isNotBlank() || deepDiveResults.isNotEmpty()) item {
-                DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving, onArtistDetails)
+                DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)
             }
             item {
                 Text("聴いた結果を教えてください", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 18.dp, 20.dp, 8.dp))
@@ -267,7 +277,7 @@ private fun ScoreBreakdown(b: RecommendationBreakdown) {
 }
 
 @Composable
-private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<MetalArtist>, loading: Boolean, onArtistDetails: (MetalArtist, String) -> Unit) {
+private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<MetalArtist>, loading: Boolean, onArtistDetails: ((MetalArtist, String) -> Unit)? = null) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp).fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -282,7 +292,20 @@ private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<Metal
         }
         results.take(8).forEach { artist ->
             Spacer(Modifier.height(8.dp))
-            SearchArtistCard(vm, artist, "deep-dive", loading, onArtistDetails = onArtistDetails)
+            if (onArtistDetails != null) {
+                SearchArtistCard(vm, artist, "deep-dive", loading, onArtistDetails = onArtistDetails)
+            } else {
+            Column(Modifier.fillMaxWidth().background(Bg, RoundedCornerShape(14.dp)).padding(12.dp)) {
+                Text(artist.name, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("${artist.country} • ${artist.genres.take(3).joinToString(" / ")} • HIDDEN ${artist.hiddenScore}", color = Muted, fontSize = 10.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SpotifyButton(vm, artist, Modifier.weight(1f), fontSize = 10)
+                    OutlinedButton(onClick = { vm.openYouTube(artist) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Text("YouTube", fontSize = 10.sp) }
+                    OutlinedButton(onClick = { vm.deepDive(artist) }, enabled = !loading, modifier = Modifier.weight(.72f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("⛏", fontSize = 11.sp) }
+                }
+            }
+            }
         }
     }
 }
@@ -1092,7 +1115,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.3.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.4.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")

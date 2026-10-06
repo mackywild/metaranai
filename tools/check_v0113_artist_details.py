@@ -11,8 +11,15 @@ for block in (card, archive):
     assert 'SpotifyButton(' not in block and 'vm.openYouTube(' not in block
     assert 'onArtistDetails' in block
     assert 'onDeepDive(artist)' in block or 'vm.deepDive(artist)' in block
-assert ui.count('SpotifyButton(vm, artist,') == 1  # only artist details
-assert ui.count('vm.openYouTube(artist)') == 1
+assert 'SpotifyButton(vm, artist,' in details
+assert 'vm.openYouTube(artist)' in details
+# Today retains its original direct-media flow, including its deep-dive panel.
+home = ui[ui.index('private fun HomeScreen'):ui.index('private fun ReactionSelector')]
+assert 'onArtistDetails' not in home and 'ArtistDetailsDialog' not in home
+assert 'DeepDivePanel(vm, deepDiveStatus, deepDiveResults, deepDiving)' in home
+panel = ui[ui.index('private fun DeepDivePanel'):ui.index('private fun ExternalMeta')]
+assert 'if (onArtistDetails != null)' in panel
+assert 'SpotifyButton(vm, artist,' in panel and 'vm.openYouTube(artist)' in panel
 assert 'mediaOpenStatus.collectAsState()' not in ui and 'spotifyOpenStatus.collectAsState()' not in ui
 assert 'vm.rateArtist(artist, reaction)' in details
 assert 'selected = record?.reaction' in details
