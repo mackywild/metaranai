@@ -1,3 +1,8 @@
+# メタらない？ v0.11.7 — SIMPLIFIED SETTINGS
+
+- 通常の設定から「外部検索・発掘」を削除。API設定は開発用ビルドにだけ表示。検索・発掘は「探す」から利用。
+- Android versionCode 37 / versionName 0.11.7。
+
 # メタらない？ v0.11.6 — CONNECTION PAGER
 
 - Spotify / Last.fm連携の説明を1ページ1アニメーションのカードへ変更。横スワイプで切り替え、下の3つのドットで位置を表示・タップ移動。
