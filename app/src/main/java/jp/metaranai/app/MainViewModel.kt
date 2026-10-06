@@ -43,6 +43,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var cloudRevision = 0L
     private val _accountBusy = MutableStateFlow(false)
     val accountBusy: StateFlow<Boolean> = _accountBusy
+    private val _loggingOut = MutableStateFlow(false)
+    val loggingOut: StateFlow<Boolean> = _loggingOut
     private val _cloudSyncing = MutableStateFlow(false)
     val cloudSyncing: StateFlow<Boolean> = _cloudSyncing
     private val _cloudStatus = MutableStateFlow("")
@@ -778,9 +780,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun signInGuest() {
         if (_accountBusy.value) return
+        _accountBusy.value = true
         accounts.signInAnonymous { result -> viewModelScope.launch {
-            result.onSuccess { _account.value = it; _accountStatus.value = "ゲストで開始しました" }
-                .onFailure { _accountStatus.value = it.message ?: "ログイン失敗" }
+            try {
+                result.onSuccess { _account.value = it; _accountStatus.value = "ゲストで開始しました" }
+                    .onFailure { _accountStatus.value = it.message ?: "ログイン失敗" }
+            } finally { _accountBusy.value = false }
         }}
     }
 
@@ -941,6 +946,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun signOutAccount(activity: android.app.Activity? = null) {
         if (_accountBusy.value) return
         _accountBusy.value = true
+        _loggingOut.value = true
         ++accountGeneration // Ignore late Firebase callbacks from the previous account.
         _cloudReady.value = false
         val running = viewModelScope.coroutineContext[Job]?.children?.toList().orEmpty()
@@ -981,6 +987,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _account.value = accounts.current()
                 _accountStatus.value = "ログアウト処理に失敗しました: ${e.message}"
             } finally {
+                _loggingOut.value = false
                 _accountBusy.value = false
             }
         }

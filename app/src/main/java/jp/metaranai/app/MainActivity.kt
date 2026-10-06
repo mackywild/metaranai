@@ -56,6 +56,19 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MetaranaiApp(vm: MainViewModel = viewModel()) {
     val onboardingComplete by vm.onboardingComplete.collectAsState()
+    val loggingOut by vm.loggingOut.collectAsState()
+    if (loggingOut) {
+        MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
+            Column(Modifier.fillMaxSize().background(Bg).padding(24.dp),
+                verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text("ログアウトしています…", color = Color.White)
+                Text("端末の記録と連携情報を削除しています", color = Muted, fontSize = 12.sp)
+            }
+        }
+        return
+    }
     if (!onboardingComplete) {
         MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
             OnboardingScreen(vm)
