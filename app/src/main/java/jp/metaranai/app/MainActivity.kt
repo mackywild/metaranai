@@ -1115,7 +1115,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.5.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.6.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")
