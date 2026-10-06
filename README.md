@@ -1,6 +1,6 @@
 # メタらない？ v0.11.5 — CONNECTION STORYBOARD
 
-- Spotify / Last.fmの「連携すると」を横に読む3コマのイラストへ変更。音楽の履歴 → Metal DNA → 未知のMetal発掘を視覚化。
+- Spotify / Last.fmの「連携すると」を横に読む3コマのループアニメーションへ変更。音楽の履歴 → Metal DNA → 未知のMetal発掘を視覚化。
 - 横スワイプで各コマを読み、短い説明で効果を確認。ログイン・連携・解析の手順は維持。
 - Android versionCode 35 / versionName 0.11.5。
 
