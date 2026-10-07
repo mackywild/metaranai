@@ -19,7 +19,7 @@ import java.security.SecureRandom
 
 class SpotifyClient(private val context: Context, private val store: LocalStore) {
     private val musicBrainz = MusicBrainzClient()
-    private val redirectUri = "http://127.0.0.1:8888/callback"
+    private val redirectUri = SpotifySetup.REDIRECT_URI
     private var verifier: String = ""
     private var state: String = ""
 

@@ -30,8 +30,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val account: StateFlow<AccountSession?> = _account
     private val _accountStatus = MutableStateFlow("")
     val accountStatus: StateFlow<String> = _accountStatus
-    private val _onboardingComplete = MutableStateFlow(store.onboardingCompleted() || store.hasPersonalData())
+    private val _onboardingComplete = MutableStateFlow(OnboardingPolicy.isComplete(store.onboardingCompleted(), store.hasPersonalData(), store.onboardingInProgress()))
     val onboardingComplete: StateFlow<Boolean> = _onboardingComplete
+    private val _onboardingSpotifyPrepared = MutableStateFlow(store.onboardingSpotifyPrepared())
+    val onboardingSpotifyPrepared: StateFlow<Boolean> = _onboardingSpotifyPrepared
+    private val _cloudChecking = MutableStateFlow(false)
+    val cloudChecking: StateFlow<Boolean> = _cloudChecking
     private val _legacyMigrationPending = MutableStateFlow(store.hasPersonalData() && accounts.current() == null && store.legacyAccountMigrationPending())
     val legacyMigrationPending: StateFlow<Boolean> = _legacyMigrationPending
     private val _cloudConflictPending = MutableStateFlow(false)
@@ -108,6 +112,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _discovering = MutableStateFlow(false)
     val discovering: StateFlow<Boolean> = _discovering
 
+    private var externalSearchJob: Job? = null
+    private var externalSearchGeneration = 0
     private val _remoteSearchResults = MutableStateFlow<List<MetalArtist>>(emptyList())
     val remoteSearchResults: StateFlow<List<MetalArtist>> = _remoteSearchResults
     private val _remoteSearchSuggestions = MutableStateFlow<List<MetalArtist>>(emptyList())
@@ -145,13 +151,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var cloudSyncJob: Job? = null
 
     init {
+        if (!_onboardingComplete.value) store.beginOnboarding()
         if (_onboardingComplete.value && (
                 _dnaName.value.isBlank() ||
                     store.dnaNameGeneratorVersion() < DnaNameGenerator.VERSION
             )) {
             regenerateDnaName(resetCounter = false)
         }
-        if (store.hasPersonalData() && !store.onboardingCompleted()) {
+        if (store.hasPersonalData() && !store.onboardingCompleted() && !store.onboardingInProgress()) {
             store.markOnboardingCompleted()
             store.setLegacyAccountMigrationPending(true)
             _onboardingComplete.value = true
@@ -276,8 +283,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         clearRemoteSearch()
         _remoteSearching.value = true
         _remoteSearchStatus.value = "Last.fm / MusicBrainzから「$q」を探索中…"
-        viewModelScope.launch {
+        val generation = externalSearchGeneration
+        externalSearchJob = viewModelScope.launch {
             externalDiscovery.searchArtists(q).onSuccess { result ->
+                if (generation != externalSearchGeneration) return@launch
                 _externalArtists.value = result.cachedArtists
                 scheduleCloudSync()
                 _remoteSearchResults.value = result.results
@@ -289,6 +298,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _recommendation.value = recommendNow()
             }.onFailure {
+                if (generation != externalSearchGeneration) return@launch
                 _remoteSearchResults.value = emptyList()
                 _remoteSearchSuggestions.value = emptyList()
                 _remoteSearchStatus.value = "外部検索失敗: ${it.message}"
@@ -298,6 +308,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearRemoteSearch() {
+        ++externalSearchGeneration
+        externalSearchJob?.cancel()
         _remoteSearchResults.value = emptyList()
         _remoteSearchSuggestions.value = emptyList()
         _remoteSearchStatus.value = ""
@@ -721,7 +733,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val partial = _history.value.filter { it.reaction == Reaction.SOME }.map { it.artistName }
         val searched = _searchHistory.value.map { it.artistName }
         val profileSeeds = MetalCatalog.artists.sortedByDescending { _profile.value.similarity(it.vector) }.map { it.name }
-        return (strong + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
+        return (strong + lastFm + _spotifyTopArtists.value + partial + searched + store.onboardingSeedArtists() + profileSeeds).distinctBy { it.lowercase() }.take(6)
     }
 
     private fun allArtists(): List<MetalArtist> = (MetalCatalog.artists + _externalArtists.value)
@@ -731,12 +743,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun syncSpotifyForSearch() = syncSpotifyInternal(showSearchResults = true)
 
-    private fun syncSpotifyInternal(showSearchResults: Boolean) {
+    private fun syncSpotifyInternal(showSearchResults: Boolean, prepareOnboarding: Boolean = false) {
         if (linkedSearchBusy() || _connecting.value) return
         if (showSearchResults) clearRemoteSearch()
         _syncing.value = true
         viewModelScope.launch {
-            val result = spotify.loginAndSync(allowAuthorization = !showSearchResults) { _spotifyStatus.value = it }
+            val result = spotify.loginAndSync(allowAuthorization = !showSearchResults && !prepareOnboarding) { _spotifyStatus.value = it }
             result.onSuccess { synced ->
                 store.saveSpotifyTopArtists(synced.topArtists)
                 _spotifyTopArtists.value = synced.topArtists
@@ -767,8 +779,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         publishDiscoveryResults(emptyList(), "外部発掘失敗: ${it.message}")
                     }
                 }
+                if (prepareOnboarding) {
+                    _onboardingSpotifyPrepared.value = synced.inferredProfile != null
+                    store.saveOnboardingSpotifyPrepared(_onboardingSpotifyPrepared.value)
+                }
                 scheduleCloudSync()
-                _spotifyStatus.value = "同期完了: ${synced.summary}"
+                _spotifyStatus.value = if (prepareOnboarding && synced.inferredProfile == null) {
+                    "視聴傾向からMetal DNAを作れませんでした。次の好み設定で好きなバンドか診断を選んでください"
+                } else "同期完了: ${synced.summary}"
                 _recommendation.value = recommendNow()
             }.onFailure {
                 _spotifyStatus.value = "同期失敗: ${it.message}"
@@ -780,13 +798,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun signInGuest() {
         if (_accountBusy.value) return
-        _accountBusy.value = true
-        accounts.signInAnonymous { result -> viewModelScope.launch {
-            try {
-                result.onSuccess { _account.value = it; _accountStatus.value = "ゲストで開始しました" }
-                    .onFailure { _accountStatus.value = it.message ?: "ログイン失敗" }
-            } finally { _accountBusy.value = false }
-        }}
+        // Account-free setup must also work offline and without Firebase Anonymous enabled.
+        _account.value = store.createLocalGuest()
+        _accountStatus.value = "アカウントなしで開始しました"
     }
 
     fun signInEmail(email: String, password: String, create: Boolean) {
@@ -828,6 +842,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         result.onSuccess { session ->
             _account.value = session
             _cloudReady.value = false
+            _cloudChecking.value = accounts.cloudSyncConfigured
             val generation = ++accountGeneration
             cloudSyncJob?.cancel()
             _cloudConflictPending.value = false
@@ -844,6 +859,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _accountStatus.value = "${session.provider}でログインしました"
             accounts.downloadState(session) { remote -> viewModelScope.launch {
                 if (generation != accountGeneration || _account.value?.uid != session.uid) return@launch
+                _cloudChecking.value = false
                 remote.onSuccess { json ->
                     when {
                         !json.isNullOrBlank() && store.hasPersonalData() -> {
@@ -858,6 +874,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                 return@launch
                             }
                             reloadFromStore()
+                            store.markOnboardingCompleted()
                             _onboardingComplete.value = true
                             _accountStatus.value = "クラウドから記録を復元しました"
                         }
@@ -887,6 +904,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _cloudReady.value = true
             _legacyMigrationPending.value = false
             store.setLegacyAccountMigrationPending(false)
+            store.markOnboardingCompleted()
             _onboardingComplete.value = true
             _cloudStatus.value = "クラウド記録をこの端末へ復元しました"
             scheduleCloudSync()
@@ -957,6 +975,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 accounts.signOut(activity)
                 store.clearPersonalData()
                 _account.value = null
+                _cloudChecking.value = false
+                _onboardingSpotifyPrepared.value = false
                 pendingCloudJson = null
                 _cloudConflictPending.value = false
                 _legacyMigrationPending.value = false
@@ -1019,13 +1039,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startWithSpotifyOnboarding() {
-        store.markOnboardingCompleted(); _onboardingComplete.value = true
-        if (store.clientId().isBlank()) {
-            if (_dnaName.value.isBlank()) regenerateDnaName()
-            _spotifyStatus.value = "Spotify Client ID未設定。Genreまたは探索から開始してください"
+        if (!spotifyConnected()) {
+            _spotifyStatus.value = "先にSpotifyを連携してください"
             return
         }
-        syncSpotify()
+        syncSpotifyInternal(showSearchResults = false, prepareOnboarding = true)
+    }
+
+    fun skipSpotifyOnboarding() {
+        _onboardingSpotifyPrepared.value = false
+        store.saveOnboardingSpotifyPrepared(false)
+    }
+
+    fun completeOnboardingFromSpotify() {
+        if (!_onboardingSpotifyPrepared.value || _syncing.value) return
+        skipOnboarding()
+        scheduleCloudSync()
+    }
+
+    fun onboardingArtistByName(name: String): MetalArtist? =
+        (allArtists() + StarterBandCatalog.genres.flatMap(StarterBandCatalog::forGenre))
+            .firstOrNull { it.name.equals(name, ignoreCase = true) }
+
+    fun searchOnboardingArtists(query: String): List<MetalArtist> {
+        if (query.isBlank()) return emptyList()
+        return (allArtists() + StarterBandCatalog.genres.flatMap(StarterBandCatalog::forGenre))
+            .distinctBy { it.name.trim().lowercase() }
+            .filter { SearchQueryMatcher.matches(it, query) }
+            .sortedWith(compareByDescending<MetalArtist> { SearchQueryMatcher.exactName(it, query) }.thenBy { it.name })
+            .take(20)
+    }
+
+    fun completeOnboardingWithArtist(artist: MetalArtist) {
+        saveOnboardingArtists(listOf(artist))
+        _profile.value = artist.vector
+        store.saveProfile(_profile.value)
+        _genreLens.value = GenreLensConfig() // Start with the artist's sound, without an inferred hard filter.
+        store.saveGenreLens(_genreLens.value)
+        regenerateDnaName()
+        finishTasteOnboarding()
+    }
+
+    fun completeOnboardingWithDiagnosis(result: MetalTasteQuiz.Result) {
+        require(result.artists.size == 3)
+        saveOnboardingArtists(result.artists)
+        _profile.value = result.profile
+        store.saveProfile(_profile.value)
+        _genreLens.value = GenreLensConfig(GenreLensMode.MANUAL, setOf(result.genre), emptyMap())
+        store.saveGenreLens(_genreLens.value)
+        regenerateDnaName()
+        finishTasteOnboarding()
+    }
+
+    private fun saveOnboardingArtists(artists: List<MetalArtist>) {
+        _externalArtists.value = (store.loadExternalArtists() + artists).distinctBy { it.name.trim().lowercase() }
+        store.saveExternalArtists(_externalArtists.value) // Portable JSON and SQLite archive are updated together.
+        store.saveOnboardingSeedArtists(artists.map { it.name })
+    }
+
+    private fun finishTasteOnboarding() {
+        store.markOnboardingCompleted()
+        _onboardingComplete.value = true
+        _genreLensPreparing.value = false
+        _genreLensReady.value = activeGenres().isEmpty() || lensUnratedCandidates().isNotEmpty()
+        _genreLensStatus.value = currentLensStatus()
+        _recommendation.value = recommendNow()
+        scheduleCloudSync()
     }
 
     fun skipOnboarding() {
@@ -1284,6 +1363,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun scheduleCloudSync() {
         ++cloudRevision
+        if (!_onboardingComplete.value) return
         if (!CloudSyncPolicy.canUpload(_account.value?.isGuest != false,
                 accounts.cloudSyncConfigured, _cloudReady.value,
                 _cloudConflictPending.value || _legacyMigrationPending.value,

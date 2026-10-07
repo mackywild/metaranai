@@ -71,7 +71,7 @@ fun MetaranaiApp(vm: MainViewModel = viewModel()) {
     }
     if (!onboardingComplete) {
         MaterialTheme(colorScheme = darkColorScheme(primary = Acid, background = Bg, surface = Card)) {
-            OnboardingScreen(vm)
+            GuidedOnboardingScreen(vm)
         }
         return
     }
@@ -1013,6 +1013,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://accounts.spotify.com/"))) }) { Text("Spotifyにログイン / 新規登録") }
             if (BuildConfig.SPOTIFY_CLIENT_ID.isBlank()) {
                 Text("Client ID取得手順\n1. 開発者Dashboardにログイン\n2. アプリを作成／既存アプリを選択\n3. Redirect URIに http://127.0.0.1:8888/callback を登録して保存\n4. SettingsのClient IDをコピーして下に貼り付け", color = Muted, fontSize = 11.sp)
+                SpotifyRedirectCopyButton()
                 Text("Client IDはSpotifyのユーザー名とは別の、アプリ用IDです。Client Secretは入力しません。", color = Muted, fontSize = 11.sp)
                 TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://developer.spotify.com/dashboard"))) }) { Text("Client IDの取得ページを開く") }
             } else {
@@ -1115,7 +1116,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             )
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { exportLauncher.launch("metaranai-backup-v0.11.8.json") },
+                onClick = { exportLauncher.launch("metaranai-backup-v0.11.9.json") },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("分析データをバックアップ")
@@ -1238,102 +1239,6 @@ private fun GenreSelector(selected: Set<String>, onToggle: (String) -> Unit) {
     }
 }
 
-
-@Composable
-private fun OnboardingScreen(vm: MainViewModel) {
-    val context = LocalContext.current
-    val activity = context as? Activity
-    val account by vm.account.collectAsState()
-    val status by vm.accountStatus.collectAsState()
-    val busy by vm.accountBusy.collectAsState()
-    val lastFmStatus by vm.lastFmProfileStatus.collectAsState()
-    val lastFmSyncing by vm.lastFmProfileSyncing.collectAsState()
-    var selected by remember { mutableStateOf(setOf<String>()) }
-    var lastFmUsername by remember { mutableStateOf("") }
-    var showEmail by remember { mutableStateOf(false) }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var createEmail by remember { mutableStateOf(true) }
-
-    LazyColumn(Modifier.fillMaxSize().background(Bg), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item {
-            Text("ようこそ", color = Muted, fontWeight = FontWeight.Bold)
-            Text("メタらない？", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
-            Text("あなたのメタルを、あなたのために。", color = Acid, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text("最初から誰かの好みに寄せません。ログインして記録を引き継ぐか、あなたのMetal DNAをここから作ります。", color = Muted)
-        }
-        item {
-            Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("アカウント", color = Acid, fontWeight = FontWeight.Bold)
-                if (account == null) {
-                    Text("おすすめ", color = Muted, fontSize = 10.sp)
-                    Button(onClick = { activity?.let { vm.signInGoogle(it) } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("Googleで続ける")
-                    }
-
-                    TextButton(onClick = { showEmail = !showEmail }, modifier = Modifier.fillMaxWidth()) {
-                        Text("メールアドレスで続ける")
-                    }
-                    if (showEmail) {
-                        OutlinedTextField(email, { email = it }, label = { Text("メールアドレス") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(password, { password = it }, label = { Text("パスワード（6文字以上）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Switch(createEmail, { createEmail = it }); Text(if (createEmail) "新規作成" else "ログイン", color = Color.White)
-                        }
-                        Button(onClick = { vm.signInEmail(email, password, createEmail) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (createEmail) "確認メールを送信して登録" else "ログイン")
-                        }
-                        if (createEmail) Text("登録後、届いた確認メールのリンクを開いてからログインします。", color = Muted, fontSize = 10.sp)
-                    }
-
-                    OutlinedButton(onClick = vm::signInGuest, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("アカウントなしで試す") }
-
-                    when {
-                        !vm.authConfigured -> Text("※ Firebase Authentication未設定。Google/メール等を使うにはFirebase設定が必要です。ゲストは利用できます。", color = Muted, fontSize = 10.sp)
-                        !vm.googleConfigured -> Text("※ メール認証は利用可能です。GoogleログインにはGOOGLE_WEB_CLIENT_IDの設定が必要です。", color = Muted, fontSize = 10.sp)
-                        !vm.cloudConfigured -> Text("※ ログインは利用可能です。クラウド同期のみFirebase Storage未設定のため無効です。", color = Muted, fontSize = 10.sp)
-                    }
-                } else {
-                    Text("${account!!.displayName.ifBlank { account!!.email.ifBlank { "Guest" } }} で開始", color = Color.White)
-                }
-                if (status.isNotBlank()) Text(status, color = Muted, fontSize = 11.sp)
-            }
-        }
-        item {
-            Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(18.dp)) {
-                Text("メタルDNAを作成", color = Acid, fontWeight = FontWeight.Bold)
-                Text("好きなジャンルを選択（複数可）。選択したジャンルから初期DNAを作り、以後の評価であなた専用に学習します。", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
-                Button(onClick = vm::startWithSpotifyOnboarding, modifier = Modifier.fillMaxWidth()) { Text("🎧 Spotifyの視聴傾向から始める") }
-                Spacer(Modifier.height(8.dp))
-                Text("Last.fmを使っているなら、長期の視聴履歴から開始できます（任意）", color = Muted, fontSize = 10.sp)
-                OutlinedTextField(
-                    value = lastFmUsername,
-                    onValueChange = { lastFmUsername = it },
-                    label = { Text("Last.fmユーザー名") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedButton(
-                    onClick = { vm.startWithLastFmOnboarding(lastFmUsername) },
-                    enabled = lastFmUsername.isNotBlank() && !lastFmSyncing,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (lastFmSyncing) "Last.fm履歴を解析中…" else "⏱ Last.fmの視聴履歴から始める")
-                }
-                if (lastFmStatus.isNotBlank() && lastFmStatus != "未連携") {
-                    Text(lastFmStatus, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
-                }
-                Text("またはジャンルから初期DNAを作成", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
-                GenreSelector(selected) { g -> selected = if (g in selected) selected - g else selected + g }
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = { vm.completeOnboardingWithGenres(selected) }, enabled = selected.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("このジャンルから始める") }
-                Text("初回DNAはSpotify / Last.fm（任意）/ ジャンル選択のどれからでも作成できます。ゲストでも利用できます。", color = Muted, fontSize = 12.sp)
-                Text("Last.fm未登録でも発掘機能は利用できます。Last.fm連携は履歴による精度ブーストです。", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
-            }
-        }
-    }
-}
 
 @Composable
 private fun AccountSettingsContent(vm: MainViewModel) {

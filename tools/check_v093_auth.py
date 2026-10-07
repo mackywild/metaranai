@@ -4,7 +4,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 acc = (root / 'app/src/main/java/jp/metaranai/app/AccountManager.kt').read_text()
 vm = (root / 'app/src/main/java/jp/metaranai/app/MainViewModel.kt').read_text()
-ui = (root / 'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
+ui = (root / 'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text() + (root / 'app/src/main/java/jp/metaranai/app/GuidedOnboardingScreen.kt').read_text()
 root_build = (root / 'build.gradle.kts').read_text()
 build = (root / 'app/build.gradle.kts').read_text()
 workflow = (root / '.github/workflows/android.yml').read_text()
@@ -54,7 +54,7 @@ assert 'val cloudConfigured: Boolean get() = accounts.cloudSyncConfigured' in vm
 assert 'if (!accounts.cloudSyncConfigured)' in vm
 assert 'ログインしました（クラウド同期は未設定）' in vm
 assert 'enabled = vm.cloudConfigured && ready' in ui
-assert 'ログインは利用可能です。クラウド同期のみ' in ui
+assert 'クラウドへの保存は現在利用できません' in ui
 
 # CI must always emit an AAB artifact; only the signed artifact is Play-uploadable.
 assert ':app:bundleRelease' in workflow

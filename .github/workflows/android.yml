@@ -63,6 +63,7 @@ jobs:
           python tools/check_v011_lastfm_optional_profile.py
           python tools/check_v0112_search_discovery.py
           python tools/check_v0113_artist_details.py
+          python tools/check_v0119_onboarding.py
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest
@@ -128,7 +129,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.11.8-apk
+          name: metaranai-v0.11.9-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
@@ -136,7 +137,7 @@ jobs:
         if: env.HAS_SIGNING_KEY == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.11.8-aab
+          name: metaranai-v0.11.9-aab
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
 
@@ -144,6 +145,6 @@ jobs:
         if: env.HAS_SIGNING_KEY != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metaranai-v0.11.8-aab-unsigned
+          name: metaranai-v0.11.9-aab-unsigned
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
