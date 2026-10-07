@@ -3,7 +3,7 @@ import re
 
 root = Path(__file__).resolve().parents[1]
 vm = (root / 'app/src/main/java/jp/metaranai/app/MainViewModel.kt').read_text()
-ui = (root / 'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text()
+ui = (root / 'app/src/main/java/jp/metaranai/app/MainActivity.kt').read_text() + (root / 'app/src/main/java/jp/metaranai/app/GuidedOnboardingScreen.kt').read_text()
 store = (root / 'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
 client = (root / 'app/src/main/java/jp/metaranai/app/LastFmProfileClient.kt').read_text()
 build = (root / 'app/build.gradle.kts').read_text()
@@ -29,9 +29,9 @@ for marker in [
 
 assert 'fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false, showSearchResults: Boolean = false)' in vm
 assert 'val lastFm = _lastFmProfileSeeds.value' in vm
-assert 'strong + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds' in vm
+assert 'strong + store.onboardingSeedArtists() + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds' in vm
 assert 'Last.fm連携（任意）' in ui
-assert 'Last.fmの視聴履歴から始める' in ui
+assert '履歴の解析・発掘は初期設定後に' in ui
 assert 'Last.fm未登録でも発掘機能は利用できます' in ui
 
 # Existing Deep Dive is a protected regression boundary: one explicit seed,

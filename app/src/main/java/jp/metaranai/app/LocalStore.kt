@@ -492,7 +492,14 @@ class LocalStore(context: Context) {
     fun hasPersonalData(): Boolean = prefs.contains("profile") || loadHistory().isNotEmpty() ||
         (prefs.getString("external_artists", "[]") ?: "[]") != "[]" || loadSearchHistory().isNotEmpty()
     fun onboardingCompleted(): Boolean = prefs.getBoolean("onboarding_v090_complete", false)
-    fun markOnboardingCompleted() = prefs.edit().putBoolean("onboarding_v090_complete", true).apply()
+    fun onboardingInProgress(): Boolean = prefs.getBoolean("onboarding_v0119_in_progress", false)
+    fun beginOnboarding() = prefs.edit().putBoolean("onboarding_v0119_in_progress", true).apply()
+    fun onboardingSpotifyPrepared(): Boolean = prefs.getBoolean("onboarding_spotify_prepared_v0119", false)
+    fun saveOnboardingSpotifyPrepared(value: Boolean) = prefs.edit().putBoolean("onboarding_spotify_prepared_v0119", value).apply()
+    fun onboardingSeedArtists(): List<String> = prefs.getStringSet("onboarding_seed_artists_v0119", emptySet()).orEmpty().toList().sorted()
+    fun saveOnboardingSeedArtists(names: List<String>) = prefs.edit().putStringSet("onboarding_seed_artists_v0119", names.toSet()).apply()
+    fun markOnboardingCompleted() = prefs.edit().putBoolean("onboarding_v090_complete", true)
+        .remove("onboarding_v0119_in_progress").remove("onboarding_spotify_prepared_v0119").apply()
     fun legacyAccountMigrationPending(): Boolean = prefs.getBoolean("account_v090_legacy_pending", false)
     fun setLegacyAccountMigrationPending(value: Boolean) = prefs.edit().putBoolean("account_v090_legacy_pending", value).apply()
     fun localAccountSession(): AccountSession? {
@@ -529,7 +536,8 @@ class LocalStore(context: Context) {
         // Account cloud sync carries recommendation/history state, not reusable login credentials.
         listOf("spotify_access_token", "spotify_refresh_token", "spotify_token_expiry",
             "account_v090_local_uid", "account_v090_name",
-            "auto_cloud_sync_v0118", "last_cloud_sync_v0118").forEach { p.remove(it) }
+            "auto_cloud_sync_v0118", "last_cloud_sync_v0118",
+            "onboarding_v0119_in_progress", "onboarding_spotify_prepared_v0119").forEach { p.remove(it) }
         return root.toString(2)
     }
 
