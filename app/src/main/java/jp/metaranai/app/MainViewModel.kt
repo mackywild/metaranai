@@ -733,7 +733,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val partial = _history.value.filter { it.reaction == Reaction.SOME }.map { it.artistName }
         val searched = _searchHistory.value.map { it.artistName }
         val profileSeeds = MetalCatalog.artists.sortedByDescending { _profile.value.similarity(it.vector) }.map { it.name }
-        return (strong + lastFm + _spotifyTopArtists.value + partial + searched + store.onboardingSeedArtists() + profileSeeds).distinctBy { it.lowercase() }.take(6)
+        return (strong + store.onboardingSeedArtists() + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
     }
 
     private fun allArtists(): List<MetalArtist> = (MetalCatalog.artists + _externalArtists.value)

@@ -29,7 +29,7 @@ for marker in [
 
 assert 'fun syncLastFmProfile(username: String, completeOnboarding: Boolean = false, showSearchResults: Boolean = false)' in vm
 assert 'val lastFm = _lastFmProfileSeeds.value' in vm
-assert 'strong + lastFm + _spotifyTopArtists.value + partial + searched + store.onboardingSeedArtists() + profileSeeds' in vm
+assert 'strong + store.onboardingSeedArtists() + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds' in vm
 assert 'Last.fm連携（任意）' in ui
 assert '履歴の解析・発掘は初期設定後に' in ui
 assert 'Last.fm未登録でも発掘機能は利用できます' in ui
