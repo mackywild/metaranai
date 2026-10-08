@@ -1,5 +1,6 @@
 package jp.metaranai.app
 
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -62,7 +63,9 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                 val attempted = shortlist.map { it.name.trim().lowercase() }.toMutableSet()
                 for (page in 1..3) {
                     for (genre in fallbackGenres.distinct().take(4)) {
-                        val candidates = getTopArtistsByTag(key, genre, 50, page)
+                        val actualPage = store.discoveryPage(genre, preference)
+                        val candidates = getTopArtistsByTag(key, genre, 50, actualPage)
+                        store.saveDiscoveryPage(genre, preference, if (candidates.isEmpty()) 1 else actualPage + 1)
                         candidates.forEach { mergeCandidate(merged, it) }
                         for (candidate in candidates) {
                             val name = candidate.name.trim().lowercase()
@@ -96,64 +99,67 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         excludedArtistNames: Set<String> = emptySet()
     ): Result<GenrePoolResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val genres = genreLenses.distinct().filter { it in GenreLensCatalog.names() }.take(4)
-            require(genres.isNotEmpty()) { "Genre Lensがありません" }
+            val requested = genreLenses.distinct().filter { it in GenreLensCatalog.names() }.take(4)
+            val genres = requested.ifEmpty { listOf("Metal") }
             val preference = store.overseasPreference()
             val key = store.lastFmApiKey()
             require(key.isNotBlank()) { "Last.fm API Keyを設定してください" }
             val excluded = excludedArtistNames.map { it.trim().lowercase() }.toSet()
-
-            var archive = (MetalCatalog.artists + store.loadExternalArtists()).distinctBy { it.name.lowercase() }
+            var archive = (store.loadInitialCatalog() + store.loadExternalArtists()).distinctBy { it.name.lowercase() }
             val fetchedByGenre = linkedMapOf<String, Int>()
             val accepted = mutableListOf<MetalArtist>()
 
             genres.forEach { genre ->
-                val before = GenreLensCatalog.filter(
-                    preference.apply(archive).filterNot { it.name.trim().lowercase() in excluded },
-                    listOf(genre)
-                ).size
+                val filterGenres = if (genre == "Metal") emptyList() else listOf(genre)
+                val before = RecommendationPool.unrated(archive, preference, filterGenres, excluded).size
                 if (before >= minimumPerGenre) {
                     fetchedByGenre[genre] = 0
                     return@forEach
                 }
                 val need = minimumPerGenre - before
                 val knownNames = archive.map { it.name.trim().lowercase() }.toMutableSet()
-                // Do not get stuck on the same top-50 list after the user has rated it all.
-                // Walk deeper Last.fm tag pages until we have enough genuinely new names (max 3 pages/run).
-                val raw = mutableListOf<Candidate>()
-                for (page in 1..3) {
-                    raw += getTopArtistsByTag(key, genre, fetchPerGenre.coerceIn(12, 50), page)
-                    val freshNames = raw.map { it.name.trim().lowercase() }
-                        .distinct()
-                        .count { it !in knownNames && it !in excluded }
-                    if (freshNames >= need) break
-                }
-                fetchedByGenre[genre] = raw.size
+                val attempted = mutableSetOf<String>()
                 var addedForGenre = 0
-                var mbLookups = 0
-                for (candidate in raw) {
+                var fetched = 0
+                // NO searches a domestic tag first, while still enforcing the requested musical genre.
+                val tags = if (preference == OverseasPreference.NO) listOf("Japanese Metal", genre).distinct() else listOf(genre)
+                for (tag in tags) {
+                    var mbLookups = 0
+                    val batch = RefillPageWalker.collect(
+                        startPage = store.discoveryPage(tag, preference), target = need - addedForGenre,
+                        fetchPage = { page ->
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            mbLookups = 0
+                            getTopArtistsByTag(key, tag, fetchPerGenre.coerceIn(12, 50), page)
+                        },
+                        accept = { candidate ->
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val normalized = candidate.name.trim().lowercase()
+                            if (normalized in knownNames || normalized in excluded || !attempted.add(normalized)) null
+                            else {
+                                val artist = enrichCandidate(key, candidate,
+                                    musicBrainzAllowed = mbLookups++ < if (preference == OverseasPreference.NO) 12 else 4,
+                                    already = false, forcedGenre = tag)
+                                if (artist != null && preference.allows(artist) && GenreLensCatalog.matches(artist, filterGenres)) {
+                                    knownNames += artist.name.trim().lowercase()
+                                    artist
+                                } else null
+                            }
+                        },
+                        onPageCompleted = { next -> store.saveDiscoveryPage(tag, preference, next) }
+                    )
+                    fetched += batch.fetched
+                    accepted += batch.artists
+                    addedForGenre += batch.artists.size
+                    archive = (archive + batch.artists).distinctBy { it.name.lowercase() }
                     if (addedForGenre >= need) break
-                    val normalized = candidate.name.trim().lowercase()
-                    // Existing cached artists (rated or unrated) are never duplicated.
-                    // Rated names are explicitly excluded from satisfying the refill target.
-                    if (normalized in knownNames || normalized in excluded) continue
-                    val artist = enrichCandidate(
-                        key,
-                        candidate,
-                        musicBrainzAllowed = mbLookups++ < if (preference == OverseasPreference.NO) 12 else 4,
-                        already = false,
-                        forcedGenre = genre
-                    ) ?: continue
-                    if (!preference.allows(artist)) continue
-                    accepted += artist
-                    knownNames += artist.name.trim().lowercase()
-                    addedForGenre++
-                    archive = (archive + artist).distinctBy { it.name.lowercase() }
                 }
+                fetchedByGenre[genre] = fetched
             }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
 
             val combined = mergeCache(accepted)
-            val fullArchive = (MetalCatalog.artists + combined).distinctBy { it.name.lowercase() }
+            val fullArchive = (store.loadInitialCatalog() + combined).distinctBy { it.name.lowercase() }
             val unratedArchive = preference.apply(fullArchive).filterNot { it.name.trim().lowercase() in excluded }
             GenrePoolResult(
                 genres = genres,
@@ -226,7 +232,8 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             else -> 45
         }
         val hidden = HiddenScoreEngine.score(info.listeners, info.playcount, discovery, confidence)
-        val location = mb?.country ?: mb?.area ?: "External"
+        val knownArtist = (store.loadExternalArtists() + MetalCatalog.artists).firstOrNull { it.name.equals(c.name, true) }
+        val location = mb?.country ?: mb?.area ?: knownArtist?.country ?: "External"
         return MetalArtist(
             name = mb?.name ?: c.name,
             country = location,
@@ -244,7 +251,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             lastFmListeners = info.listeners,
             lastFmPlaycount = info.playcount,
             mbid = info.mbid ?: mb?.mbid,
-            area = mb?.area,
+            area = mb?.area ?: knownArtist?.area,
             beginDate = mb?.beginDate,
             endDate = mb?.endDate,
             ended = mb?.ended,

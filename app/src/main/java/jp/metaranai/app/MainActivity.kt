@@ -129,7 +129,7 @@ private fun Header() {
 
 @Composable
 private fun HomeScreen(vm: MainViewModel) {
-    val rec by vm.recommendation.collectAsState()
+    val rec = vm.recommendation.collectAsState().value
     val lens by vm.genreLens.collectAsState()
     val lensPreparing by vm.genreLensPreparing.collectAsState()
     val lensReady by vm.genreLensReady.collectAsState()
@@ -139,7 +139,7 @@ private fun HomeScreen(vm: MainViewModel) {
     val deepDiveStatus by vm.deepDiveStatus.collectAsState()
     val deepDiving by vm.deepDiving.collectAsState()
     val activeGenres = GenreLensCatalog.activeGenres(lens)
-    val lensBlocked = activeGenres.isNotEmpty() && (!lensReady || lensPreparing)
+    val lensBlocked = !lensReady || lensPreparing || rec == null
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header() }
@@ -152,22 +152,25 @@ private fun HomeScreen(vm: MainViewModel) {
         if (lensBlocked) {
             item {
                 Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
-                    Text("ジャンル候補を探索中", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("未評価候補を探索", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Spacer(Modifier.height(16.dp))
-                    Text(if (lensPreparing) "${GenreLensCatalog.displayNames(activeGenres)} を探索中…" else "${GenreLensCatalog.displayNames(activeGenres)} の候補が不足しています", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text(if (lensPreparing) "新しい未評価バンドを探索中…" else "条件に合う未評価候補がありません", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(10.dp))
                     Text("指定ジャンルの未評価バンドを補充してから、あなたのDNAに合う今日の1組を選びます。", color = Muted, lineHeight = 20.sp)
                     if (reactionStatus.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
                         Text(reactionStatus, color = Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
+                    Text(lensStatus, color = Muted, fontSize = 12.sp)
                     if (lensPreparing) {
                         Spacer(Modifier.height(14.dp))
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        OutlinedButton(onClick = vm::retryRecommendationDiscovery, modifier = Modifier.fillMaxWidth()) { Text("新しい候補を再検索") }
                     }
                 }
             }
-        } else {
+        } else if (rec != null) {
             item {
                 Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
                     Text("今日のメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -372,7 +375,8 @@ private fun SearchScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, Strin
     }
 
     val overseasPreference by vm.overseasPreference.collectAsState()
-    val localResults = remember(query, external, overseasPreference) { vm.search(query) }
+    val initialCatalog by vm.initialCatalog.collectAsState()
+    val localResults = remember(query, external, overseasPreference, initialCatalog) { vm.search(query) }
     val merged = vm.applyArtistPreference(localResults + remote).distinctBy { it.name.lowercase() }
     val suggestionResults = vm.applyArtistPreference(suggestions)
         .filterNot { suggestion -> merged.any { it.name.equals(suggestion.name, true) } }
@@ -545,7 +549,8 @@ private fun ArchiveScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, Stri
     var genreFilter by remember { mutableStateOf<String?>(null) }
     var sortMode by remember { mutableStateOf("DNA") }
 
-    val archive = remember(external, history) { vm.archiveArtists() }
+    val initialCatalog by vm.initialCatalog.collectAsState()
+    val archive = remember(external, history, initialCatalog) { vm.archiveArtists() }
     val latestReaction = remember(history) {
         history.groupBy { it.artistName.trim().lowercase() }.mapValues { (_, rows) -> rows.first() }
     }

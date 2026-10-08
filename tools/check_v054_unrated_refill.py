@@ -17,9 +17,10 @@ assert '未評価${counts[it] ?: 0}組・総数${totals[it] ?: 0}組' in vm
 assert 'showReactionStatus("${rec.artist.name} は今日すでに評価済み。未評価候補を探します")' in vm
 assert 'showReactionStatus("${reaction.label} を記録しました")' in vm
 assert 'excludedArtistNames: Set<String> = emptySet()' in ext
-assert 'preference.apply(archive).filterNot { it.name.trim().lowercase() in excluded }' in ext
+assert 'RecommendationPool.unrated(archive, preference, filterGenres, excluded)' in ext
 assert 'normalized in knownNames || normalized in excluded' in ext
-assert 'for (page in 1..3)' in ext
+assert 'RefillPageWalker.collect' in ext
+assert 'maxPages: Int = 3' in (root/'app/src/main/java/jp/metaranai/app/RefillPageWalker.kt').read_text()
 assert '"page" to page.coerceAtLeast(1).toString()' in ext
 assert 'reactionStatus by vm.reactionStatus.collectAsState()' in ui
 assert 'if (reactionStatus.isNotBlank())' in ui
