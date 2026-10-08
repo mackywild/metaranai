@@ -27,6 +27,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         fallbackGenres: List<String> = emptyList()
     ): Result<ExternalDiscoveryResult> = withContext(Dispatchers.IO) {
         runCatching {
+            val preference = store.overseasPreference()
             val key = store.lastFmApiKey()
             require(key.isNotBlank()) { "Last.fm API Keyを設定してください" }
             require(seeds.isNotEmpty() || genreLenses.isNotEmpty()) { "発掘SeedまたはGenre Lensがありません" }
@@ -51,12 +52,13 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             val alreadyNames = store.loadExternalArtists().map { it.name.lowercase() }.toSet()
             val accepted = mutableListOf<MetalArtist>()
             shortlist.forEachIndexed { index, c ->
-                enrichCandidate(key, c, musicBrainzAllowed = index < 12, already = c.name.lowercase() in alreadyNames)?.takeIf { GenreLensCatalog.matches(it, genreLenses) }?.let(accepted::add)
+                enrichCandidate(key, c, musicBrainzAllowed = index < 12, already = c.name.lowercase() in alreadyNames)?.takeIf { GenreLensCatalog.matches(it, genreLenses) && preference.allows(it) }?.let(accepted::add)
             }
 
             // Manual discovery must keep searching when similar artists are empty, known or non-metal.
             // Genre pages are bounded; automatic pool maintenance remains a separate operation.
             if (accepted.isEmpty() && fallbackGenres.isNotEmpty()) {
+                var regionLookups = 0
                 val attempted = shortlist.map { it.name.trim().lowercase() }.toMutableSet()
                 for (page in 1..3) {
                     for (genre in fallbackGenres.distinct().take(4)) {
@@ -65,9 +67,9 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                         for (candidate in candidates) {
                             val name = candidate.name.trim().lowercase()
                             if (name in known || seeds.any { it.equals(candidate.name, true) } || !attempted.add(name)) continue
-                            val enriched = enrichCandidate(key, candidate, musicBrainzAllowed = false,
+                            val enriched = enrichCandidate(key, candidate, musicBrainzAllowed = preference == OverseasPreference.NO && regionLookups++ < 12,
                                 already = name in alreadyNames, forcedGenre = genre) ?: continue
-                            if (!GenreLensCatalog.matches(enriched, genreLenses)) continue
+                            if (!GenreLensCatalog.matches(enriched, genreLenses) || !preference.allows(enriched)) continue
                             accepted += enriched
                             if (accepted.size >= 12) break
                         }
@@ -96,6 +98,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         runCatching {
             val genres = genreLenses.distinct().filter { it in GenreLensCatalog.names() }.take(4)
             require(genres.isNotEmpty()) { "Genre Lensがありません" }
+            val preference = store.overseasPreference()
             val key = store.lastFmApiKey()
             require(key.isNotBlank()) { "Last.fm API Keyを設定してください" }
             val excluded = excludedArtistNames.map { it.trim().lowercase() }.toSet()
@@ -106,7 +109,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 
             genres.forEach { genre ->
                 val before = GenreLensCatalog.filter(
-                    archive.filterNot { it.name.trim().lowercase() in excluded },
+                    preference.apply(archive).filterNot { it.name.trim().lowercase() in excluded },
                     listOf(genre)
                 ).size
                 if (before >= minimumPerGenre) {
@@ -137,11 +140,11 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                     val artist = enrichCandidate(
                         key,
                         candidate,
-                        musicBrainzAllowed = mbLookups < 4,
+                        musicBrainzAllowed = mbLookups++ < if (preference == OverseasPreference.NO) 12 else 4,
                         already = false,
                         forcedGenre = genre
                     ) ?: continue
-                    if (mbLookups < 4) mbLookups++
+                    if (!preference.allows(artist)) continue
                     accepted += artist
                     knownNames += artist.name.trim().lowercase()
                     addedForGenre++
@@ -151,7 +154,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 
             val combined = mergeCache(accepted)
             val fullArchive = (MetalCatalog.artists + combined).distinctBy { it.name.lowercase() }
-            val unratedArchive = fullArchive.filterNot { it.name.trim().lowercase() in excluded }
+            val unratedArchive = preference.apply(fullArchive).filterNot { it.name.trim().lowercase() in excluded }
             GenrePoolResult(
                 genres = genres,
                 fetched = fetchedByGenre.values.sum(),
@@ -171,6 +174,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         runCatching {
             val q = query.trim()
             require(q.length >= 2) { "2文字以上入力してください" }
+            val preference = store.overseasPreference()
             val key = store.lastFmApiKey()
             require(key.isNotBlank()) { "Last.fm API Keyを設定してください" }
 
@@ -179,7 +183,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             val enriched = mutableListOf<MetalArtist>()
             raw.forEachIndexed { index, candidate ->
                 enrichCandidate(
-                    key, candidate.copy(seed = "Search:$q"), musicBrainzAllowed = index < 3,
+                    key, candidate.copy(seed = "Search:$q"), musicBrainzAllowed = index < if (preference == OverseasPreference.NO) 12 else 3,
                     already = candidate.name.lowercase() in alreadyNames
                 )?.let(enriched::add)
             }
@@ -222,7 +226,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             else -> 45
         }
         val hidden = HiddenScoreEngine.score(info.listeners, info.playcount, discovery, confidence)
-        val location = mb?.area ?: mb?.country ?: "External"
+        val location = mb?.country ?: mb?.area ?: "External"
         return MetalArtist(
             name = mb?.name ?: c.name,
             country = location,

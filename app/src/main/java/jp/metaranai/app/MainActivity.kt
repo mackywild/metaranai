@@ -371,9 +371,10 @@ private fun SearchScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, Strin
         vm.deepDive(artist)
     }
 
-    val localResults = remember(query, external) { vm.search(query) }
-    val merged = (localResults + remote).distinctBy { it.name.lowercase() }
-    val suggestionResults = suggestions
+    val overseasPreference by vm.overseasPreference.collectAsState()
+    val localResults = remember(query, external, overseasPreference) { vm.search(query) }
+    val merged = vm.applyArtistPreference(localResults + remote).distinctBy { it.name.lowercase() }
+    val suggestionResults = vm.applyArtistPreference(suggestions)
         .filterNot { suggestion -> merged.any { it.name.equals(suggestion.name, true) } }
         .distinctBy { it.name.lowercase() }
 
@@ -789,7 +790,7 @@ private fun DnaScreen(vm: MainViewModel) {
 }
 
 private enum class SettingsPanel {
-    ACCOUNT, GENRE, DISCOVERY, SPOTIFY, LASTFM, BACKUP
+    ACCOUNT, GENRE, OVERSEAS, DISCOVERY, SPOTIFY, LASTFM, BACKUP
 }
 
 private const val PRIVACY_POLICY_URL = "https://mackywild.github.io/metaranai/privacy-policy.html"
@@ -809,6 +810,7 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
     val discovering by vm.discovering.collectAsState()
     val lens by vm.genreLens.collectAsState()
     val backupStatus by vm.backupStatus.collectAsState()
+    val overseasPreference by vm.overseasPreference.collectAsState()
 
     var openPanel by remember { mutableStateOf<SettingsPanel?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -867,6 +869,13 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
                 title = "アカウント",
                 summary = accountSummary,
                 onClick = { openPanel = SettingsPanel.ACCOUNT }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "邦楽フィルター",
+                summary = "海外アーティストも聴く: ${overseasPreference.answer}",
+                onClick = { openPanel = SettingsPanel.OVERSEAS }
             )
         }
         item {
@@ -952,6 +961,11 @@ private fun SettingsScreen(vm: MainViewModel, onLinkedSearch: (String) -> Unit =
             AccountSettingsContent(vm)
         }
 
+        SettingsPanel.OVERSEAS -> SettingsDialogShell(title = "邦楽フィルター", onDismiss = { openPanel = null }) {
+            Text("海外アーティストも聴きますか？", color = Color.White, fontWeight = FontWeight.Bold)
+            OverseasPreferenceChoices(overseasPreference, onSelect = vm::setOverseasPreference)
+            Text("検索・発掘・深掘り・今日のおすすめに反映します。歌詞の言語ではなくアーティストの国・地域で判定します。国が不明の候補は「いいえ」では表示しません。保存済みの図鑑や評価は残ります。", color = Muted, fontSize = 12.sp)
+        }
         SettingsPanel.GENRE -> SettingsDialogShell(
             title = "ジャンル固定",
             onDismiss = { openPanel = null }

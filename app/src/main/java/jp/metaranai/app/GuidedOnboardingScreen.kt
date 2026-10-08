@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 private val SetupAcid = Color(0xFFD6FF36)
 private val SetupMuted = Color(0xFFA4A4A4)
 
-/** One decision at a time: account -> Spotify -> Last.fm -> first Metal DNA. */
+/** One decision at a time: account -> Spotify -> Last.fm -> artist origins -> first Metal DNA. */
 @Composable
 fun GuidedOnboardingScreen(vm: MainViewModel) {
     val context = LocalContext.current
@@ -43,6 +43,8 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
     val remoteSearching by vm.remoteSearching.collectAsState()
     val remoteStatus by vm.remoteSearchStatus.collectAsState()
     val savedArtists by vm.externalArtists.collectAsState()
+    val overseasPreference by vm.overseasPreference.collectAsState()
+    var regionAnswered by rememberSaveable { mutableStateOf(false) }
     var step by rememberSaveable { mutableIntStateOf(0) }
     var accountForm by rememberSaveable { mutableStateOf(false) }
     var guestRequested by rememberSaveable { mutableStateOf(false) }
@@ -77,8 +79,8 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
         .imePadding().padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("メタらない？", color = SetupAcid, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Text("初期設定 ${step + 1} / 4", color = SetupMuted, fontSize = 12.sp)
-        LinearProgressIndicator(progress = { (step + 1) / 4f }, modifier = Modifier.fillMaxWidth())
+        Text("初期設定 ${step + 1} / 5", color = SetupMuted, fontSize = 12.sp)
+        LinearProgressIndicator(progress = { (step + 1) / 5f }, modifier = Modifier.fillMaxWidth())
         when (step) {
             0 -> {
                 SetupHeading("アカウントを使いますか？", "ログインすると、クラウドに保存した図鑑・評価・Metal DNAを引き継げます。アカウントなしでも音楽を発掘できます。")
@@ -165,6 +167,16 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
                 SetupSecondary("スキップ", !busy) { step = 3 }
             }
             3 -> {
+                SetupHeading("海外アーティストも聴きますか？", "国内・海外の候補をどのくらい表示するか選びます。あとから設定の「邦楽フィルター」で変更できます。")
+                OverseasPreferenceChoices(if (regionAnswered) overseasPreference else null, !busy) {
+                    vm.setOverseasPreference(it)
+                    regionAnswered = true
+                    selectedName = ""
+                }
+                Text("歌詞の言語ではなくアーティストの国・地域で判定します。国が不明の候補は「いいえ」では表示しません。", color = SetupMuted, fontSize = 12.sp)
+                SetupButton("次へ", !busy && regionAnswered) { step = 4 }
+            }
+            4 -> {
                 if (spotifyPrepared && tasteMode == 0) {
                     SetupHeading("Metal DNAの準備ができました", "Spotifyの視聴傾向をもとに、あなたの好みから発掘を始められます。")
                     Text(spotifyStatus, color = SetupMuted, fontSize = 13.sp)
@@ -180,8 +192,8 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
                         SetupHeading("好きなアーティストを1組選ぶ", "このアーティストの音を出発点にして、Metal DNAを育てます。")
                         OutlinedTextField(query, { query = it; selectedName = ""; vm.clearRemoteSearch() }, label = { Text("アーティスト名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         SetupSecondary(if (remoteSearching) "外部検索中…" else "Last.fm / MusicBrainzでも検索", !remoteSearching && query.trim().length >= 2 && vm.lastFmConfigured()) { vm.searchExternal(query) }
-                        val local = remember(query, savedArtists) { vm.searchOnboardingArtists(query) }
-                        val results = (remoteResults + local).distinctBy { it.name.trim().lowercase() }.take(20)
+                        val local = remember(query, savedArtists, overseasPreference) { vm.searchOnboardingArtists(query) }
+                        val results = vm.applyArtistPreference(remoteResults + local).distinctBy { it.name.trim().lowercase() }.take(20)
                         results.forEach { artist ->
                             OutlinedButton(onClick = { selectedName = artist.name }, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.fillMaxWidth()) {
@@ -215,7 +227,7 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
                         SetupSecondary("バンド検索に切り替える") { tasteMode = 1 }
                     }
                     3 -> {
-                        val result = remember(answerCodes) { MetalTasteQuiz.result(answers) }
+                        val result = remember(answerCodes, overseasPreference) { MetalTasteQuiz.result(answers, overseasPreference) }
                         SetupHeading("あなたのファーストジャンル", GenreLensCatalog.displayName(result.genre))
                         Text("音の好みタイプ: ${result.code}", color = SetupAcid, fontWeight = FontWeight.Bold)
                         Text(result.description, color = SetupMuted, fontSize = 14.sp)

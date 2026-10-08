@@ -61,6 +61,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val googleConfigured: Boolean get() = accounts.googleConfigured
     val cloudConfigured: Boolean get() = accounts.cloudSyncConfigured
 
+    private val _overseasPreference = MutableStateFlow(store.overseasPreference())
+    val overseasPreference: StateFlow<OverseasPreference> = _overseasPreference
+
+    fun setOverseasPreference(value: OverseasPreference) {
+        _overseasPreference.value = value
+        store.saveOverseasPreference(value)
+        clearRemoteSearch()
+        clearDeepDive()
+        saveLensAndRefresh()
+        _recommendation.value = recommendNow()
+    }
+
+    private fun eligibleArtists(): List<MetalArtist> = _overseasPreference.value.apply(allArtists())
+    fun applyArtistPreference(artists: Collection<MetalArtist>): List<MetalArtist> = _overseasPreference.value.apply(artists)
+
     private val _profile = MutableStateFlow(store.loadProfile())
     val profile: StateFlow<MetalVector> = _profile
     private val _vocalProfile = MutableStateFlow(store.loadVocalProfile())
@@ -262,12 +277,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun search(query: String): List<MetalArtist> {
         val q = query.trim()
-        val catalog = allArtists()
+        val catalog = eligibleArtists()
         if (q.isBlank()) return emptyList()
         return catalog
             .filter { SearchQueryMatcher.matches(it, q) }
             .sortedWith(
                 compareByDescending<MetalArtist> { SearchQueryMatcher.exactName(it, q) }
+                    .thenByDescending { _overseasPreference.value.weight(it) }
                     .thenBy { it.name.lowercase() }
             )
             .take(40)
@@ -289,9 +305,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (generation != externalSearchGeneration) return@launch
                 _externalArtists.value = result.cachedArtists
                 scheduleCloudSync()
-                _remoteSearchResults.value = result.results
-                _remoteSearchSuggestions.value = result.suggestions
-                _remoteSearchStatus.value = if (result.results.isEmpty() && result.suggestions.isEmpty()) {
+                _remoteSearchResults.value = applyArtistPreference(result.results)
+                _remoteSearchSuggestions.value = applyArtistPreference(result.suggestions)
+                _remoteSearchStatus.value = if (_remoteSearchResults.value.isEmpty() && _remoteSearchSuggestions.value.isEmpty()) {
                     "一致する候補が見つかりませんでした"
                 } else {
                     ""
@@ -396,19 +412,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         deepDiveJob = viewModelScope.launch {
             externalDiscovery.discover(listOf(artist.name), limitPerSeed = 18).onSuccess { result ->
                 _externalArtists.value = result.artists
-                val direct = result.artists.filter { candidate ->
+                val direct = applyArtistPreference(result.artists).filter { candidate ->
                     !candidate.name.equals(artist.name, true) &&
                         candidate.name.trim().lowercase() !in rated &&
                         candidate.sourceSeed?.equals(artist.name, true) == true
                 }
                 val candidates = direct.ifEmpty {
-                    result.artists.filter { candidate ->
+                    applyArtistPreference(result.artists).filter { candidate ->
                         !candidate.name.equals(artist.name, true) && candidate.name.trim().lowercase() !in rated
                     }
                 }.sortedByDescending { candidate ->
                     _profile.value.similarity(candidate.vector) * .68f +
                         candidate.hiddenScore.coerceIn(0, 100) / 100f * .22f +
-                        candidate.discovery * .10f
+                        candidate.discovery * .10f - (1f - _overseasPreference.value.weight(candidate))
                 }.take(12)
                 _deepDiveResults.value = candidates
                 _deepDiveStatus.value = if (candidates.isEmpty()) {
@@ -680,14 +696,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun linkedSearchBusy(): Boolean =
         _remoteSearching.value || _discovering.value || _syncing.value || _lastFmProfileSyncing.value
 
-    private fun fallbackDiscoveryGenres(): List<String> = activeGenres().ifEmpty {
+    private fun fallbackDiscoveryGenres(): List<String> = if (_overseasPreference.value == OverseasPreference.NO) listOf("Japanese Metal") + activeGenres() else activeGenres().ifEmpty {
         GenreLensCatalog.lenses.sortedByDescending { _profile.value.similarity(it.vector) }
             .take(3).map { it.name }
     }
 
     private fun publishDiscoveryResults(artists: List<MetalArtist>, failure: String = "") {
         val rated = ratedArtistNames()
-        val selection = DiscoverySearchResults.choose(artists, allArtists(), _profile.value, activeGenres(), rated)
+        val selection = DiscoverySearchResults.choose(artists, allArtists(), _profile.value, activeGenres(), rated, _overseasPreference.value)
         val results = selection.artists
         _remoteSearchResults.value = results
         _remoteSearchSuggestions.value = emptyList()
@@ -732,8 +748,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val lastFm = _lastFmProfileSeeds.value
         val partial = _history.value.filter { it.reaction == Reaction.SOME }.map { it.artistName }
         val searched = _searchHistory.value.map { it.artistName }
-        val profileSeeds = MetalCatalog.artists.sortedByDescending { _profile.value.similarity(it.vector) }.map { it.name }
-        return (strong + store.onboardingSeedArtists() + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds).distinctBy { it.lowercase() }.take(6)
+        val profileSeeds = _overseasPreference.value.apply(MetalCatalog.artists).sortedByDescending { _profile.value.similarity(it.vector) }.map { it.name }
+        return (strong + store.onboardingSeedArtists() + lastFm + _spotifyTopArtists.value + partial + searched + profileSeeds).distinctBy { it.lowercase() }.filter { name ->
+            val artist = allArtists().firstOrNull { it.name.equals(name, true) }
+            _overseasPreference.value != OverseasPreference.NO || (artist != null && _overseasPreference.value.allows(artist))
+        }.take(6)
     }
 
     private fun allArtists(): List<MetalArtist> = (MetalCatalog.artists + _externalArtists.value)
@@ -1063,14 +1082,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun searchOnboardingArtists(query: String): List<MetalArtist> {
         if (query.isBlank()) return emptyList()
-        return (allArtists() + StarterBandCatalog.genres.flatMap(StarterBandCatalog::forGenre))
+        return applyArtistPreference(allArtists() + StarterBandCatalog.genres.flatMap(StarterBandCatalog::forGenre))
             .distinctBy { it.name.trim().lowercase() }
             .filter { SearchQueryMatcher.matches(it, query) }
-            .sortedWith(compareByDescending<MetalArtist> { SearchQueryMatcher.exactName(it, query) }.thenBy { it.name })
+            .sortedWith(compareByDescending<MetalArtist> { SearchQueryMatcher.exactName(it, query) }.thenByDescending { _overseasPreference.value.weight(it) }.thenBy { it.name })
             .take(20)
     }
 
     fun completeOnboardingWithArtist(artist: MetalArtist) {
+        if (!_overseasPreference.value.allows(artist)) return
         saveOnboardingArtists(listOf(artist))
         _profile.value = artist.vector
         store.saveProfile(_profile.value)
@@ -1082,6 +1102,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun completeOnboardingWithDiagnosis(result: MetalTasteQuiz.Result) {
         require(result.artists.size == 3)
+        require(result.artists.all { _overseasPreference.value.allows(it) })
         saveOnboardingArtists(result.artists)
         _profile.value = result.profile
         store.saveProfile(_profile.value)
@@ -1129,6 +1150,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setBackupStatus(value: String) { _backupStatus.value = value }
 
     private fun reloadFromStore(generateDna: Boolean = true) {
+        clearRemoteSearch()
+        clearDeepDive()
+        _overseasPreference.value = store.overseasPreference()
         _autoCloudSync.value = store.autoCloudSyncEnabled()
         _lastCloudSync.value = store.lastCloudSync()
         _profile.value = store.loadProfile()
@@ -1261,7 +1285,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _history.value.map { it.artistName.trim().lowercase() }.toSet()
 
     private fun lensCandidates(genres: List<String> = activeGenres()): List<MetalArtist> =
-        GenreLensCatalog.filter(allArtists(), genres)
+        GenreLensCatalog.filter(eligibleArtists(), genres)
 
     private fun lensUnratedCandidates(genres: List<String> = activeGenres()): List<MetalArtist> {
         val rated = ratedArtistNames()
@@ -1269,11 +1293,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun lensCounts(genres: List<String> = activeGenres()): Map<String, Int> =
-        GenreLensCatalog.countByGenre(allArtists(), genres)
+        GenreLensCatalog.countByGenre(eligibleArtists(), genres)
 
     private fun lensUnratedCounts(genres: List<String> = activeGenres()): Map<String, Int> {
         val rated = ratedArtistNames()
-        val unratedArchive = allArtists().filterNot { it.name.trim().lowercase() in rated }
+        val unratedArchive = eligibleArtists().filterNot { it.name.trim().lowercase() in rated }
         return GenreLensCatalog.countByGenre(unratedArchive, genres)
     }
 
@@ -1288,7 +1312,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val genres = GenreLensCatalog.activeGenres(_genreLens.value)
         if (genres.isEmpty()) return true
         val rated = _history.value.map { it.artistName.trim().lowercase() }.toSet()
-        val unratedArchive = allArtists().filterNot { it.name.trim().lowercase() in rated }
+        val unratedArchive = eligibleArtists().filterNot { it.name.trim().lowercase() in rated }
         val counts = GenreLensCatalog.countByGenre(unratedArchive, genres)
         return counts.isNotEmpty() && counts.values.all { it >= minimumUnratedLensPoolPerGenre }
     }
@@ -1317,7 +1341,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (genres.isEmpty()) {
             return engine.recommend(
                 profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
-                candidates = allArtists(), genreLens = emptyList(), seed = seed
+                candidates = eligibleArtists(), genreLens = emptyList(), seed = seed, overseasPreference = _overseasPreference.value
             )
         }
         val strict = lensUnratedCandidates(genres)
@@ -1326,12 +1350,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (strict.isEmpty()) {
             return engine.recommend(
                 profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
-                candidates = allArtists(), genreLens = emptyList(), seed = seed
+                candidates = eligibleArtists(), genreLens = emptyList(), seed = seed, overseasPreference = _overseasPreference.value
             )
         }
         return engine.recommend(
             profile = _profile.value, history = _history.value, searchHistory = _searchHistory.value,
-            candidates = strict, genreLens = genres, seed = seed
+            candidates = strict, genreLens = genres, seed = seed, overseasPreference = _overseasPreference.value
         )
     }
 
