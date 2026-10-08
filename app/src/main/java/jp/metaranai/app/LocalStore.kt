@@ -493,6 +493,9 @@ class LocalStore(context: Context) {
         (prefs.getString("external_artists", "[]") ?: "[]") != "[]" || loadSearchHistory().isNotEmpty()
     fun onboardingCompleted(): Boolean = prefs.getBoolean("onboarding_v090_complete", false)
     fun onboardingInProgress(): Boolean = prefs.getBoolean("onboarding_v0119_in_progress", false)
+    fun overseasPreference(): OverseasPreference = OverseasPreference.fromStored(prefs.getString("overseas_preference_v0120", null))
+    fun saveOverseasPreference(value: OverseasPreference) = prefs.edit().putString("overseas_preference_v0120", value.name).apply()
+
     fun beginOnboarding() = prefs.edit().putBoolean("onboarding_v0119_in_progress", true).apply()
     fun onboardingSpotifyPrepared(): Boolean = prefs.getBoolean("onboarding_spotify_prepared_v0119", false)
     fun saveOnboardingSpotifyPrepared(value: Boolean) = prefs.edit().putBoolean("onboarding_spotify_prepared_v0119", value).apply()
@@ -562,6 +565,7 @@ class LocalStore(context: Context) {
         // Deliberately do NOT require a specific version. V0.5-V0.6.x JSON backups remain valid.
         val o = root.getJSONObject("preferences")
         val e = prefs.edit()
+        if (!o.has("overseas_preference_v0120")) e.remove("overseas_preference_v0120")
         if (!o.has("dna_name_generator_version_v095")) {
             e.putInt("dna_name_generator_version_v095", 0)
         }

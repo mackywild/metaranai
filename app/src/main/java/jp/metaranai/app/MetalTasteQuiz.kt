@@ -28,7 +28,7 @@ object MetalTasteQuiz {
             Choice("深く入り込める雰囲気", "すぐには覚えられなくても余韻が残る曲", mapOf(7 to .35f))))
     )
 
-    fun result(answers: List<Int>): Result {
+    fun result(answers: List<Int>, overseasPreference: OverseasPreference = OverseasPreference.YES): Result {
         require(answers.size == questions.size && answers.all { it in 0..1 }) { "すべての質問に回答してください" }
         val values = MutableList(8) { .5f }
         questions.forEachIndexed { index, q -> q.choices[answers[index]].values.forEach { (axis, value) -> values[axis] = value } }
@@ -38,9 +38,19 @@ object MetalTasteQuiz {
         val symbols = listOf("SD", "MH", "CG", "OR")
         val code = symbols.mapIndexed { i, pair -> pair[answers[i]] }.joinToString("")
         val traits = profile.traits().filter { it.second >= .80f }.take(3).joinToString("・") { it.first }
-        return Result(code, genre, profile,
+        // In domestic-only mode keep the quiz DNA, but use the Japanese Metal entry pool.
+        val firstGenre = if (overseasPreference == OverseasPreference.NO) "Japanese Metal" else genre
+        val bands = when (overseasPreference) {
+            OverseasPreference.YES -> StarterBandCatalog.forGenre(genre)
+            OverseasPreference.NO -> MetalCatalog.artists.filter { OverseasPreference.isJapanese(it) }
+                .sortedByDescending { profile.similarity(it.vector) }.take(3)
+            OverseasPreference.SOMETIMES -> (GenreLensCatalog.filter(MetalCatalog.artists.filter { OverseasPreference.isJapanese(it) }, listOf(genre)) + StarterBandCatalog.forGenre(genre))
+                .distinctBy { it.name.lowercase() }
+                .sortedByDescending { profile.similarity(it.vector) - (1f - overseasPreference.weight(it)) }.take(3)
+        }
+        return Result(code, firstGenre, profile,
             "${traits.ifBlank { "落ち着いた重さ" }}を楽しめる音からスタート。評価を重ねると、Metal DNAがあなたの好みに育ちます。",
-            StarterBandCatalog.forGenre(genre))
+            bands)
     }
 
     private fun distance(a: MetalVector, b: MetalVector): Float {

@@ -11,13 +11,14 @@ class RecommendationEngine {
         searchHistory: List<SearchRecord> = emptyList(),
         candidates: List<MetalArtist> = MetalCatalog.artists,
         genreLens: List<String> = emptyList(),
-        seed: Long = LocalDate.now().toEpochDay()
+        seed: Long = LocalDate.now().toEpochDay(),
+        overseasPreference: OverseasPreference = OverseasPreference.YES
     ): Recommendation {
         require(candidates.isNotEmpty()) { "推薦候補がありません" }
         val seen = history.map { it.artistName.lowercase() }.toSet()
         val searched = searchHistory.take(30).map { it.artistName.lowercase() }.toSet()
         val lensActive = genreLens.isNotEmpty()
-        val unique = candidates.distinctBy { it.name.lowercase() }
+        val unique = overseasPreference.apply(candidates).distinctBy { it.name.lowercase() }
         // V0.5.3: Genre Lens is a WHERE clause, not a score bonus.
         val eligible = if (lensActive) GenreLensCatalog.filter(unique, genreLens) else unique
         require(eligible.isNotEmpty()) { "Genre Lens候補がありません: ${genreLens.joinToString(" / ")}" }
@@ -35,11 +36,15 @@ class RecommendationEngine {
             } else {
                 similarity * .50f + hidden * .20f + novelty * .15f + exploration * .10f + discovery * .04f + searchInterest * .01f
             }
-            artist to score
+            artist to (score - (1f - overseasPreference.weight(artist)))
         }.sortedByDescending { it.second }
 
         val pool = ranked.filter { it.first.name.lowercase() !in seen }.take(12).ifEmpty { ranked.take(12) }
-        val selected = pool[Math.floorMod(seed, pool.size.toLong()).toInt()]
+        val selected = if (overseasPreference == OverseasPreference.SOMETIMES) {
+            val total = pool.sumOf { overseasPreference.weight(it.first).toDouble() }
+            var cursor = kotlin.random.Random(seed).nextDouble(total)
+            pool.firstOrNull { cursor -= overseasPreference.weight(it.first); cursor < 0 } ?: pool.last()
+        } else pool[Math.floorMod(seed, pool.size.toLong()).toInt()]
         val artist = selected.first
         val similarity = profile.similarity(artist.vector)
         val compatibility = (similarity * 100).roundToInt()
