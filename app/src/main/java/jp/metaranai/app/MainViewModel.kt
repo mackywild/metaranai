@@ -193,8 +193,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val genres = activeGenres()
         if (_onboardingComplete.value && !currentLensPoolSatisfied()) {
-            _genreLensReady.value = false
-            _genreLensPreparing.value = true
+            _genreLensReady.value = lensUnratedCandidates(genres).isNotEmpty()
+            _genreLensPreparing.value = !_genreLensReady.value
             _genreLensStatus.value = currentLensStatus()
             if (store.lastFmApiKey().isNotBlank()) {
                 viewModelScope.launch {
@@ -742,7 +742,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             externalDiscovery.discover(
                 seeds, genreLenses = genres,
                 excludedArtistNames = allArtists().map { it.name.trim().lowercase() }.toSet() + ratedArtistNames(),
-                fallbackGenres = fallbackDiscoveryGenres()
+                fallbackGenres = fallbackDiscoveryGenres(),
+                onCandidates = { cached, fresh ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        _externalArtists.value = cached
+                        publishDiscoveryResults(fresh)
+                    }
+                }
             ).onSuccess { result ->
                 _externalArtists.value = result.artists
                 publishDiscoveryResults(result.discoveredArtists)
@@ -1226,8 +1232,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val counts = lensUnratedCounts(genres)
         val ready = counts.values.all { it >= minimumUnratedLensPoolPerGenre }
         val hasUnrated = lensUnratedCandidates(genres).isNotEmpty()
-        _genreLensReady.value = ready || (hasUnrated && store.lastFmApiKey().isBlank())
-        _genreLensPreparing.value = !ready && _onboardingComplete.value && store.lastFmApiKey().isNotBlank()
+        _genreLensReady.value = hasUnrated
+        _genreLensPreparing.value = !hasUnrated && _onboardingComplete.value && store.lastFmApiKey().isNotBlank()
         _genreLensStatus.value = lensStatusText(genres, counts, ready)
         if (hasUnrated && !_genreLensPreparing.value) {
             _recommendation.value = recommendNow()
@@ -1267,9 +1273,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _discovering.value = true
-        _genreLensPreparing.value = true
-        _genreLensReady.value = false
-        _genreLensStatus.value = "${genres.joinToString(" / ")} の未評価地下候補を補充中…"
+        _genreLensPreparing.value = !hasUnratedBefore
+        _genreLensReady.value = hasUnratedBefore
+        _genreLensStatus.value = "${genres.joinToString(" / ")} の未評価候補をバックグラウンドで補充中…"
         _discoveryStatus.value = _genreLensStatus.value
         val generation = refillGeneration
         refillRunning = true
@@ -1279,7 +1285,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     genreLenses = genres,
                     minimumPerGenre = refillTargetUnratedLensPoolPerGenre,
                     fetchPerGenre = 50,
-                    excludedArtistNames = ratedArtistNames()
+                    excludedArtistNames = ratedArtistNames(),
+                    onCandidates = { cached ->
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                            if (generation == refillGeneration) {
+                                _externalArtists.value = cached
+                                val available = lensUnratedCandidates().isNotEmpty()
+                                _genreLensReady.value = available
+                                _genreLensPreparing.value = !available
+                                if (available && _recommendation.value == null) _recommendation.value = recommendNow()
+                                _genreLensStatus.value = "未評価候補を追加しました。残りをバックグラウンドで補充中…"
+                            }
+                        }
+                    }
                 ).onSuccess { result ->
                     if (generation != refillGeneration) return@onSuccess
                     _externalArtists.value = result.artists
@@ -1297,8 +1315,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _discoveryStatus.value = summary
                     store.saveDiscoverySummary(summary)
                     scheduleCloudSync()
-                    _recommendation.value = recommendNow()
-                    if (hasUnrated) _recommendation.value = recommendNow(System.currentTimeMillis())
+                    val displayed = _recommendation.value?.artist?.name
+                    if (displayed == null || lensUnratedCandidates().none { it.name == displayed })
+                        _recommendation.value = recommendNow(System.currentTimeMillis())
                 }.onFailure {
                     if (generation != refillGeneration) return@onFailure
                     val hasUnrated = lensUnratedCandidates(genres).isNotEmpty()
@@ -1442,10 +1461,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         _genreLensStatus.value = currentLensStatus()
         if (store.lastFmApiKey().isNotBlank()) {
-            _genreLensReady.value = false
-            _genreLensPreparing.value = true
             cancelRecommendationRefill()
-            _genreLensPreparing.value = true
+            _genreLensReady.value = hasUnrated
+            _genreLensPreparing.value = !hasUnrated
             lensRefreshJob = viewModelScope.launch {
                 delay(120)
                 ensureGenreLensPool(force = true)

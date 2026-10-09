@@ -13,7 +13,8 @@ enum class OverseasPreference(val answer: String, val detail: String) {
 
     companion object {
         fun fromStored(value: String?): OverseasPreference = entries.firstOrNull { it.name == value } ?: YES
-        fun isJapanese(artist: MetalArtist): Boolean = listOf(artist.country, artist.area.orEmpty()).any {
+        fun isJapanese(artist: MetalArtist): Boolean = isJapanese(artist.country, artist.area)
+        fun isJapanese(country: String, area: String? = null): Boolean = listOf(country, area.orEmpty()).any {
             it.trim().lowercase().split(Regex("[\\s/,|()]+"))
                 .any { word -> word in setOf("jp", "japan", "日本", "日本国") }
         }

@@ -18,14 +18,15 @@ import kotlin.math.roundToInt
  * - unbounded local cache (deduplicated by normalized artist name)
  */
 class ExternalDiscoveryClient(private val store: LocalStore) {
-    private val musicBrainz = MusicBrainzClient()
+    private val musicBrainz = MusicBrainzClient(requestTimeoutMs = 4_000)
 
     suspend fun discover(
         seeds: List<String>,
         genreLenses: List<String> = emptyList(),
         limitPerSeed: Int = 18,
         excludedArtistNames: Set<String> = emptySet(),
-        fallbackGenres: List<String> = emptyList()
+        fallbackGenres: List<String> = emptyList(),
+        onCandidates: suspend (List<MetalArtist>, List<MetalArtist>) -> Unit = { _, _ -> }
     ): Result<ExternalDiscoveryResult> = withContext(Dispatchers.IO) {
         runCatching {
             val preference = store.overseasPreference()
@@ -44,6 +45,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 
             val known = MetalCatalog.artists.map { it.name.lowercase() }.toSet() +
                 excludedArtistNames.map { it.trim().lowercase() }
+            val budget = DiscoveryBudget()
             val shortlist = merged.values
                 .filterNot { it.name.lowercase() in known }
                 .filterNot { it.name.lowercase() in seeds.map { it.lowercase() } }
@@ -53,7 +55,12 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             val alreadyNames = store.loadExternalArtists().map { it.name.lowercase() }.toSet()
             val accepted = mutableListOf<MetalArtist>()
             shortlist.forEachIndexed { index, c ->
-                enrichCandidate(key, c, musicBrainzAllowed = index < 12, already = c.name.lowercase() in alreadyNames)?.takeIf { GenreLensCatalog.matches(it, genreLenses) && preference.allows(it) }?.let(accepted::add)
+                if (!budget.hasTime()) return@forEachIndexed
+                enrichCandidate(key, c, musicBrainzAllowed = index < 12, already = c.name.lowercase() in alreadyNames, budget = budget)
+                    ?.takeIf { GenreLensCatalog.matches(it, genreLenses) && preference.allows(it) }?.let { artist ->
+                        accepted += artist
+                        if (accepted.size == 1 || accepted.size % 3 == 0) onCandidates(mergeCache(accepted), accepted.toList())
+                    }
             }
 
             // Manual discovery must keep searching when similar artists are empty, known or non-metal.
@@ -62,18 +69,21 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                 var regionLookups = 0
                 val attempted = shortlist.map { it.name.trim().lowercase() }.toMutableSet()
                 for (page in 1..3) {
+                    if (!budget.hasTime()) break
                     for (genre in fallbackGenres.distinct().take(4)) {
                         val actualPage = store.discoveryPage(genre, preference)
                         val candidates = getTopArtistsByTag(key, genre, 50, actualPage)
                         store.saveDiscoveryPage(genre, preference, if (candidates.isEmpty()) 1 else actualPage + 1)
                         candidates.forEach { mergeCandidate(merged, it) }
                         for (candidate in candidates) {
+                            if (!budget.hasTime()) break
                             val name = candidate.name.trim().lowercase()
                             if (name in known || seeds.any { it.equals(candidate.name, true) } || !attempted.add(name)) continue
                             val enriched = enrichCandidate(key, candidate, musicBrainzAllowed = preference == OverseasPreference.NO && regionLookups++ < 12,
-                                already = name in alreadyNames, forcedGenre = genre) ?: continue
+                                already = name in alreadyNames, forcedGenre = genre, budget = budget) ?: continue
                             if (!GenreLensCatalog.matches(enriched, genreLenses) || !preference.allows(enriched)) continue
                             accepted += enriched
+                            if (accepted.size == 1 || accepted.size % 3 == 0) onCandidates(mergeCache(accepted), accepted.toList())
                             if (accepted.size >= 12) break
                         }
                         if (accepted.isNotEmpty()) break
@@ -96,9 +106,11 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         genreLenses: List<String>,
         minimumPerGenre: Int = 20,
         fetchPerGenre: Int = 50,
-        excludedArtistNames: Set<String> = emptySet()
+        excludedArtistNames: Set<String> = emptySet(),
+        onCandidates: suspend (List<MetalArtist>) -> Unit = {}
     ): Result<GenrePoolResult> = withContext(Dispatchers.IO) {
         runCatching {
+            val budget = DiscoveryBudget()
             val requested = genreLenses.distinct().filter { it in GenreLensCatalog.names() }.take(4)
             val genres = requested.ifEmpty { listOf("Metal") }
             val preference = store.overseasPreference()
@@ -110,6 +122,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             val accepted = mutableListOf<MetalArtist>()
 
             genres.forEach { genre ->
+                if (!budget.hasTime()) return@forEach
                 val filterGenres = if (genre == "Metal") emptyList() else listOf(genre)
                 val before = RecommendationPool.unrated(archive, preference, filterGenres, excluded).size
                 if (before >= minimumPerGenre) {
@@ -124,6 +137,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                 // NO searches a domestic tag first, while still enforcing the requested musical genre.
                 val tags = if (preference == OverseasPreference.NO) listOf("Japanese Metal", genre).distinct() else listOf(genre)
                 for (tag in tags) {
+                    if (!budget.hasTime()) break
                     var mbLookups = 0
                     val batch = RefillPageWalker.collect(
                         startPage = store.discoveryPage(tag, preference), target = need - addedForGenre,
@@ -139,14 +153,21 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
                             else {
                                 val artist = enrichCandidate(key, candidate,
                                     musicBrainzAllowed = mbLookups++ < if (preference == OverseasPreference.NO) 12 else 4,
-                                    already = false, forcedGenre = tag)
+                                    already = false, forcedGenre = tag, budget = budget)
                                 if (artist != null && preference.allows(artist) && GenreLensCatalog.matches(artist, filterGenres)) {
                                     knownNames += artist.name.trim().lowercase()
                                     artist
                                 } else null
                             }
                         },
-                        onPageCompleted = { next -> store.saveDiscoveryPage(tag, preference, next) }
+                        onPageCompleted = { next -> store.saveDiscoveryPage(tag, preference, next) },
+                        shouldContinue = budget::hasTime,
+                        onAccepted = { partial ->
+                            if (partial.size == 1 || partial.size % 3 == 0) {
+                                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                onCandidates(mergeCache(accepted + partial))
+                            }
+                        }
                     )
                     fetched += batch.fetched
                     accepted += batch.artists
@@ -209,7 +230,15 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         }
     }
 
-    private fun enrichCandidate(apiKey: String, c: Candidate, musicBrainzAllowed: Boolean, already: Boolean, forcedGenre: String? = null): MetalArtist? {
+    private fun enrichCandidate(apiKey: String, c: Candidate, musicBrainzAllowed: Boolean, already: Boolean, forcedGenre: String? = null, budget: DiscoveryBudget? = null): MetalArtist? {
+        if (budget != null && !budget.hasTime()) return null
+        val preference = store.overseasPreference()
+        val knownArtist = MetalCatalog.findByName(c.name) ?: store.loadExternalArtists().firstOrNull { it.name.equals(c.name, true) }
+        val mb = if (musicBrainzAllowed && (knownArtist == null || knownArtist.country == "External"))
+            runCatching { musicBrainz.searchArtist(c.name) }.getOrNull() else null
+        val location = mb?.country ?: mb?.area ?: knownArtist?.country ?: "External"
+        if (preference == OverseasPreference.NO && !OverseasPreference.isJapanese(location, mb?.area ?: knownArtist?.area)) return null
+        if (budget != null && !budget.hasTime()) return null
         val tags = getTopTags(apiKey, c.name)
         val metalTags = tags.filter { DiscoveryTagMapper.isMetalTag(it) }.toMutableList()
         // tag.getTopArtists(genre) is itself a genre membership signal. Preserve it in the local archive
@@ -220,8 +249,8 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         if (metalTags.isEmpty()) return null
 
         val vocalType = VocalAnalyzer.infer(tags)
+        if (budget != null && !budget.hasTime()) return null
         val info = getArtistInfo(apiKey, c.name)
-        val mb = if (musicBrainzAllowed) runCatching { musicBrainz.searchArtist(c.name) }.getOrNull() else null
         val vector = DiscoveryTagMapper.vectorFromTags(tags)
         val discovery = (.72f + (1f - c.match.coerceIn(0f, 1f)) * .22f + if (!already) .06f else 0f)
             .coerceIn(.55f, .99f)
@@ -232,8 +261,6 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             else -> 45
         }
         val hidden = HiddenScoreEngine.score(info.listeners, info.playcount, discovery, confidence)
-        val knownArtist = (store.loadExternalArtists() + MetalCatalog.artists).firstOrNull { it.name.equals(c.name, true) }
-        val location = mb?.country ?: mb?.area ?: knownArtist?.country ?: "External"
         return MetalArtist(
             name = mb?.name ?: c.name,
             country = location,
@@ -356,7 +383,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     private fun lastFmGet(params: Map<String, String>): JSONObject {
         val query = params.entries.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8") }=${URLEncoder.encode(v, "UTF-8")}" }
         val connection = (URL("https://ws.audioscrobbler.com/2.0/?$query").openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 12_000
+            requestMethod = "GET"; connectTimeout = 4_000; readTimeout = 5_000
             setRequestProperty("User-Agent", "Metaranai-Android/0.6.4")
         }
         val code = connection.responseCode

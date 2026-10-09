@@ -7,7 +7,7 @@ import java.net.URLEncoder
 import java.net.URL
 import java.text.Normalizer
 
-class MusicBrainzClient {
+class MusicBrainzClient(private val requestTimeoutMs: Int = 10_000) {
     private var lastRequestAt = 0L
 
     fun searchArtist(name: String): MusicBrainzArtist? {
@@ -108,7 +108,7 @@ class MusicBrainzClient {
         throttle()
         val url = URL("https://musicbrainz.org/ws/2/artist/${URLEncoder.encode(safe, "UTF-8")}?inc=url-rels&fmt=json")
         val c = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 10_000
+            requestMethod = "GET"; connectTimeout = requestTimeoutMs; readTimeout = requestTimeoutMs
             setRequestProperty("User-Agent", "Metaranai-Android/0.6.4 (Spotify identity resolver)")
             setRequestProperty("Accept", "application/json")
         }
@@ -132,7 +132,7 @@ class MusicBrainzClient {
         val q = URLEncoder.encode("artist:\"$name\"", "UTF-8")
         val url = URL("https://musicbrainz.org/ws/2/artist/?query=$q&fmt=json&limit=$limit")
         val c = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 10_000; readTimeout = 10_000
+            requestMethod = "GET"; connectTimeout = requestTimeoutMs; readTimeout = requestTimeoutMs
             setRequestProperty("User-Agent", "Metaranai-Android/0.6.4 (music discovery prototype)")
             setRequestProperty("Accept", "application/json")
         }
@@ -193,6 +193,7 @@ class MusicBrainzClient {
             .toSet()
     }
 
+    @Synchronized
     private fun throttle() {
         val now = System.currentTimeMillis()
         val wait = 1100L - (now - lastRequestAt)
