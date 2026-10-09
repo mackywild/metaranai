@@ -493,6 +493,18 @@ class LocalStore(context: Context) {
         (prefs.getString("external_artists", "[]") ?: "[]") != "[]" || loadSearchHistory().isNotEmpty()
     fun onboardingCompleted(): Boolean = prefs.getBoolean("onboarding_v090_complete", false)
     fun onboardingInProgress(): Boolean = prefs.getBoolean("onboarding_v0119_in_progress", false)
+    fun loadInitialCatalog(): List<MetalArtist> {
+        val names = prefs.getStringSet("initial_catalog_v0121", null)
+        return if (names == null) RecommendationPool.initial(overseasPreference(), GenreLensCatalog.activeGenres(loadGenreLens()))
+            else MetalCatalog.artists.filter { it.name in names }
+    }
+    fun saveInitialCatalog(artists: List<MetalArtist>) = prefs.edit()
+        .putStringSet("initial_catalog_v0121", artists.map { it.name }.toSet()).apply()
+    fun discoveryPage(tag: String, preference: OverseasPreference): Int =
+        prefs.getInt("discovery_page_v0121_${preference.name}_$tag", 1).coerceAtLeast(1)
+    fun saveDiscoveryPage(tag: String, preference: OverseasPreference, nextPage: Int) = prefs.edit()
+        .putInt("discovery_page_v0121_${preference.name}_$tag", nextPage.coerceAtLeast(1)).apply()
+
     fun overseasPreference(): OverseasPreference = OverseasPreference.fromStored(prefs.getString("overseas_preference_v0120", null))
     fun saveOverseasPreference(value: OverseasPreference) = prefs.edit().putString("overseas_preference_v0120", value.name).apply()
 
@@ -566,6 +578,7 @@ class LocalStore(context: Context) {
         val o = root.getJSONObject("preferences")
         val e = prefs.edit()
         if (!o.has("overseas_preference_v0120")) e.remove("overseas_preference_v0120")
+        if (!o.has("initial_catalog_v0121")) e.remove("initial_catalog_v0121")
         if (!o.has("dna_name_generator_version_v095")) {
             e.putInt("dna_name_generator_version_v095", 0)
         }
