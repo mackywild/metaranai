@@ -236,7 +236,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         val knownArtist = MetalCatalog.findByName(c.name) ?: store.loadExternalArtists().firstOrNull { it.name.equals(c.name, true) }
         val mb = if (musicBrainzAllowed && (knownArtist == null || knownArtist.country == "External"))
             runCatching { musicBrainz.searchArtist(c.name) }.getOrNull() else null
-        val location = mb?.country ?: mb?.area ?: knownArtist?.country ?: "External"
+        val location = mb?.country ?: mb?.area ?: knownArtist?.country ?: ArtistAliases.knownCountry(c.name) ?: "External"
         if (preference == OverseasPreference.NO && !OverseasPreference.isJapanese(location, mb?.area ?: knownArtist?.area)) return null
         if (budget != null && !budget.hasTime()) return null
         val tags = getTopTags(apiKey, c.name)
@@ -262,7 +262,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
         }
         val hidden = HiddenScoreEngine.score(info.listeners, info.playcount, discovery, confidence)
         return MetalArtist(
-            name = mb?.name ?: c.name,
+            name = mb?.name ?: ArtistAliases.canonicalName(c.name),
             country = location,
             genres = metalTags.take(5).map(DiscoveryTagMapper::displayTag),
             vector = vector,
@@ -284,20 +284,14 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
             ended = mb?.ended,
             hiddenScore = hidden,
             metadataConfidence = confidence,
-            vocalType = vocalType
+            vocalType = vocalType,
+            canonicalName = mb?.name ?: ArtistAliases.canonicalName(c.name),
+            aliases = (listOf(c.name) + mb?.aliases.orEmpty() + knownArtist?.aliases.orEmpty() + ArtistAliases.aliases(c.name)).distinct()
         )
     }
 
     private fun mergeCache(newArtists: List<MetalArtist>): List<MetalArtist> {
-        val combined = (store.loadExternalArtists() + newArtists)
-            .groupBy { it.name.trim().lowercase() }
-            .map { (_, xs) ->
-                xs.maxWithOrNull(
-                    compareBy<MetalArtist> { it.metadataConfidence }
-                        .thenBy { it.hiddenScore }
-                        .thenBy { if (it.mbid != null) 1 else 0 }
-                )!!
-            }
+        val combined = ArtistAliases.deduplicate(store.loadExternalArtists() + newArtists)
             .sortedWith(compareByDescending<MetalArtist> { it.hiddenScore }.thenByDescending { it.discovery })
         store.saveExternalArtists(combined)
         return combined
@@ -312,7 +306,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
 
     private fun searchLastFm(apiKey: String, query: String, limit: Int): List<Candidate> {
         val json = lastFmGet(mapOf(
-            "method" to "artist.search", "artist" to query, "limit" to limit.toString(),
+            "method" to "artist.search", "artist" to ArtistAliases.canonicalName(query), "limit" to limit.toString(),
             "api_key" to apiKey, "format" to "json"
         ))
         val arr = json.optJSONObject("results")?.optJSONObject("artistmatches")?.optJSONArray("artist") ?: return emptyList()
@@ -329,7 +323,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     }
 
     private fun getSimilar(apiKey: String, artist: String, limit: Int): List<Candidate> {
-        val json = lastFmGet(mapOf("method" to "artist.getSimilar", "artist" to artist, "limit" to limit.toString(), "autocorrect" to "1", "api_key" to apiKey, "format" to "json"))
+        val json = lastFmGet(mapOf("method" to "artist.getSimilar", "artist" to ArtistAliases.canonicalName(artist), "limit" to limit.toString(), "autocorrect" to "1", "api_key" to apiKey, "format" to "json"))
         val arr = json.optJSONObject("similarartists")?.optJSONArray("artist") ?: return emptyList()
         return buildList {
             for (i in 0 until arr.length()) {
@@ -359,7 +353,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     }
 
     private fun getTopTags(apiKey: String, artist: String): List<String> {
-        val json = lastFmGet(mapOf("method" to "artist.getTopTags", "artist" to artist, "autocorrect" to "1", "api_key" to apiKey, "format" to "json"))
+        val json = lastFmGet(mapOf("method" to "artist.getTopTags", "artist" to ArtistAliases.canonicalName(artist), "autocorrect" to "1", "api_key" to apiKey, "format" to "json"))
         val arr = json.optJSONObject("toptags")?.optJSONArray("tag") ?: return emptyList()
         return buildList {
             for (i in 0 until minOf(arr.length(), 20)) {
@@ -370,7 +364,7 @@ class ExternalDiscoveryClient(private val store: LocalStore) {
     }
 
     private fun getArtistInfo(apiKey: String, artist: String): LastFmArtistInfo {
-        val json = lastFmGet(mapOf("method" to "artist.getInfo", "artist" to artist, "autocorrect" to "1", "api_key" to apiKey, "format" to "json"))
+        val json = lastFmGet(mapOf("method" to "artist.getInfo", "artist" to ArtistAliases.canonicalName(artist), "autocorrect" to "1", "api_key" to apiKey, "format" to "json"))
         val a = json.optJSONObject("artist") ?: return LastFmArtistInfo(null, null, null)
         val stats = a.optJSONObject("stats")
         return LastFmArtistInfo(

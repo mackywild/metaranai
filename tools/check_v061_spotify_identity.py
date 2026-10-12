@@ -11,7 +11,7 @@ resolver=spotify.split('suspend fun resolveArtistDestination',1)[1].split('priva
 assert 'normalized.contains(target)' not in resolver and 'target.contains(normalized)' not in resolver
 assert 'canonicalExactName(candidate.optString("name")) != target' in spotify
 assert 'resolveSpotifyFromMusicBrainz' in resolver
-assert 'artist.metadataConfidence >= 90' in resolver
+assert 'lookupArtist.metadataConfidence >= 90' in resolver
 assert 'verification: String = ""' in models
 assert 'spotify.resolveArtistDestination(artist)' in vm
 print('V061_SAFETY_COMPAT_OK')

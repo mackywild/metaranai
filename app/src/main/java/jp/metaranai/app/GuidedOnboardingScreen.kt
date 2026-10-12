@@ -197,7 +197,7 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
                         results.forEach { artist ->
                             OutlinedButton(onClick = { selectedName = artist.name }, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.fillMaxWidth()) {
-                                    Text(if (selectedName == artist.name) "✓ ${artist.name}" else artist.name, color = if (selectedName == artist.name) SetupAcid else Color.White)
+                                    Text(if (selectedName == artist.name) "✓ ${artist.displayName}" else artist.name, color = if (selectedName == artist.name) SetupAcid else Color.White)
                                     Text("${artist.country} · ${artist.genres.joinToString(" / ")}", color = SetupMuted, fontSize = 11.sp)
                                 }
                             }
@@ -235,7 +235,7 @@ fun GuidedOnboardingScreen(vm: MainViewModel) {
                         result.artists.forEachIndexed { index, artist ->
                             Surface(color = Color(0xFF181818), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("${index + 1}. ${artist.name}", color = SetupAcid, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                    Text("${index + 1}. ${artist.displayName}", color = SetupAcid, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                                     Text(artist.reason, color = Color.White, fontSize = 13.sp)
                                     Text("${artist.country} · ${GenreLensCatalog.displayName(result.genre)}", color = SetupMuted, fontSize = 11.sp)
                                 }

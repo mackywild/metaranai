@@ -12,7 +12,7 @@ object SearchQueryMatcher {
         if (terms.isEmpty()) return true
 
         val fields = buildList {
-            add(normalize(artist.name))
+            ArtistAliases.names(artist).forEach { add(normalize(it)) }
             add(normalize(artist.country))
             artist.genres.forEach { add(normalize(it)) }
         }
@@ -21,10 +21,10 @@ object SearchQueryMatcher {
     }
 
     fun exactName(artist: MetalArtist, query: String): Boolean =
-        normalize(artist.name) == normalize(query)
+        ArtistAliases.names(artist).any { normalize(it) == normalize(query) }
 
     private fun normalize(value: String): String =
-        value.trim()
+        java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC).trim()
             .lowercase()
             .replace(Regex("[\\s\\-_・/]+"), "")
 }

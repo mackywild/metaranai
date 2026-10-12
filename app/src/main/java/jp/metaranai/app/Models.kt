@@ -85,8 +85,12 @@ data class MetalArtist(
     val ended: Boolean? = null,
     val hiddenScore: Int = 50,
     val metadataConfidence: Int = 0,
-    val vocalType: VocalType = VocalType.UNKNOWN
-)
+    val vocalType: VocalType = VocalType.UNKNOWN,
+    val canonicalName: String? = null,
+    val aliases: List<String> = emptyList()
+) {
+    val displayName: String get() = canonicalName?.takeIf { it.isNotBlank() } ?: ArtistAliases.canonicalName(name)
+}
 
 /**
  * V0.5.1 five-level feedback.

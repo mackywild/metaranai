@@ -6,7 +6,7 @@ store=(root/'app/src/main/java/jp/metaranai/app/LocalStore.kt').read_text()
 vm=(root/'app/src/main/java/jp/metaranai/app/MainViewModel.kt').read_text()
 build=(root/'app/build.gradle.kts').read_text()
 assert 'store.spotifyArtistLinkV064(artist)' in spotify and 'store.saveSpotifyArtistLinkV064' in spotify
-assert 'resolveIdentityForSpotify(artist)' in spotify
+assert 'resolveIdentityForSpotify(lookupArtist)' in spotify
 for marker in ['countryMatch','areaMatch','beginExact','名前完全一致','国一致','開始年一致']: assert marker in mb, marker
 assert 'MusicBrainzメタデータ照合' in spotify
 assert 'exactMatches.size == 1 && strongIdentityReason != null' in spotify

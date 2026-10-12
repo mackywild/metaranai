@@ -214,7 +214,9 @@ class LocalStore(context: Context) {
             ended = if (o.has("ended")) o.optBoolean("ended") else null,
             hiddenScore = o.optInt("hiddenScore", 50),
             metadataConfidence = o.optInt("metadataConfidence", 0),
-            vocalType = runCatching { VocalType.valueOf(o.optString("vocalType", "UNKNOWN")) }.getOrDefault(VocalType.UNKNOWN)
+            vocalType = runCatching { VocalType.valueOf(o.optString("vocalType", "UNKNOWN")) }.getOrDefault(VocalType.UNKNOWN),
+            canonicalName = o.optString("canonicalName").takeIf { it.isNotBlank() },
+            aliases = buildList { val aliases = o.optJSONArray("aliases"); if (aliases != null) for (i in 0 until aliases.length()) add(aliases.optString(i)) }
         )
     }
 
@@ -225,6 +227,8 @@ class LocalStore(context: Context) {
         put("mbid", artist.mbid ?: ""); put("area", artist.area ?: ""); put("beginDate", artist.beginDate ?: ""); put("endDate", artist.endDate ?: "")
         artist.ended?.let { put("ended", it) }; put("hiddenScore", artist.hiddenScore); put("metadataConfidence", artist.metadataConfidence)
         put("vocalType", artist.vocalType.name)
+        put("canonicalName", artist.canonicalName ?: "")
+        put("aliases", JSONArray().apply { artist.aliases.forEach { put(it) } })
         put("genres", JSONArray().apply { artist.genres.forEach { put(it) } })
         put("vector", JSONObject().apply {
             put("melody",artist.vector.melody); put("speed",artist.vector.speed); put("heavy",artist.vector.heavy)

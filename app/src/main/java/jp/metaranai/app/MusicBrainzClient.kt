@@ -11,16 +11,20 @@ class MusicBrainzClient(private val requestTimeoutMs: Int = 10_000) {
     private var lastRequestAt = 0L
 
     fun searchArtist(name: String): MusicBrainzArtist? {
-        val arr = fetchArtists(name, 3) ?: return null
+        val queryName = ArtistAliases.canonicalName(name)
+        val arr = fetchArtists(queryName, 10) ?: return null
         var best: JSONObject? = null
         var bestScore = -1
+        var secondScore = -1
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val score = o.optInt("score", 0) + if (o.optString("name").equals(name, true)) 20 else 0
-            if (score > bestScore) { best = o; bestScore = score }
+            if (!exactNameOrAlias(o, queryName)) continue
+            val score = o.optInt("score", 0) + 20
+            if (score > bestScore) { secondScore = bestScore; best = o; bestScore = score }
+            else if (score > secondScore) secondScore = score
         }
         val o = best ?: return null
-        if (bestScore < 70) return null
+        if (bestScore < 70 || (secondScore >= 0 && bestScore - secondScore < 15)) return null
         return parseArtist(o, name, bestScore.coerceAtMost(100))
     }
 
@@ -38,7 +42,7 @@ class MusicBrainzClient(private val requestTimeoutMs: Int = 10_000) {
         val exact = buildList {
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
-                if (canonicalName(o.optString("name")) == targetName) add(o)
+                if (canonicalName(o.optString("name")) == targetName || exactNameOrAlias(o, artist.name)) add(o)
             }
         }
         if (exact.isEmpty()) return null
@@ -129,7 +133,8 @@ class MusicBrainzClient(private val requestTimeoutMs: Int = 10_000) {
 
     private fun fetchArtists(name: String, limit: Int): JSONArray? {
         throttle()
-        val q = URLEncoder.encode("artist:\"$name\"", "UTF-8")
+        val escaped = name.replace("\\", "\\\\").replace("\"", "\\\"")
+        val q = URLEncoder.encode("artist:\"$escaped\" OR alias:\"$escaped\"", "UTF-8")
         val url = URL("https://musicbrainz.org/ws/2/artist/?query=$q&fmt=json&limit=$limit")
         val c = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = requestTimeoutMs; readTimeout = requestTimeoutMs
@@ -155,9 +160,17 @@ class MusicBrainzClient(private val requestTimeoutMs: Int = 10_000) {
             beginDate = life?.optString("begin")?.takeIf { it.isNotBlank() },
             endDate = life?.optString("end")?.takeIf { it.isNotBlank() },
             ended = if (life?.has("ended") == true) life.optBoolean("ended") else null,
-            matchScore = score.coerceAtMost(100)
+            matchScore = score.coerceAtMost(100),
+            aliases = aliasNames(o)
         )
     }
+
+    private fun aliasNames(o: JSONObject): List<String> {
+        val aliases = o.optJSONArray("aliases") ?: return emptyList()
+        return (0 until aliases.length()).mapNotNull { aliases.optJSONObject(it)?.optString("name")?.takeIf(String::isNotBlank) }
+    }
+    private fun exactNameOrAlias(o: JSONObject, query: String): Boolean =
+        (listOf(o.optString("name")) + aliasNames(o)).any { ArtistAliases.normalize(it) == ArtistAliases.normalize(query) }
 
     private fun canonicalName(value: String): String = Normalizer
         .normalize(value, Normalizer.Form.NFKC)
@@ -204,7 +217,8 @@ class MusicBrainzClient(private val requestTimeoutMs: Int = 10_000) {
 
 data class MusicBrainzArtist(
     val mbid: String?, val name: String, val country: String?, val area: String?,
-    val beginDate: String?, val endDate: String?, val ended: Boolean?, val matchScore: Int
+    val beginDate: String?, val endDate: String?, val ended: Boolean?, val matchScore: Int,
+    val aliases: List<String> = emptyList()
 )
 
 data class MusicBrainzIdentityMatch(
