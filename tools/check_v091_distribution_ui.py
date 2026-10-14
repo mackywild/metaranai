@@ -33,7 +33,7 @@ assert 'WHY THIS ARTIST?' not in ui
 assert 'vocalFilter' not in ui
 assert 'NOT_FOUND("🔍 見つからなかった"' in models
 assert 'reaction != Reaction.NOT_FOUND' in vm
-assert 'private fun SpotifyButton' in ui and 'enabled = available == true' in ui
+assert 'private fun SpotifyButton' in ui and 'enabled = available != null' in ui
 assert 'fun saveManualDna' not in vm
 assert 'この数値でDNAを生成' not in ui and 'ランダムDNAで遊ぶ' not in ui
 assert 'あなたのメタルDNA' in ui and 'LinearProgressIndicator' in ui

@@ -233,7 +233,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Details can appraise any artist, including a same-day reappraisal. */
     fun rateArtist(artist: MetalArtist, reaction: Reaction): Boolean {
-        val record = DiscoveryRecord(artist.name, LocalDateTime.now().withNano(0).toString(), reaction,
+        val record = DiscoveryRecord(reactionFor(artist.name)?.artistName ?: artist.name, LocalDateTime.now().withNano(0).toString(), reaction,
             (_profile.value.similarity(artist.vector) * 100).toInt())
         val next = ArtistRatingHistory.record(_history.value, record)
         if (next === _history.value) return false
@@ -359,7 +359,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduleCloudSync()
     }
 
-    private fun spotifyKey(artist: MetalArtist): String = artist.name.trim().lowercase()
+    fun spotifyKey(artist: MetalArtist): String = ArtistAliases.availabilityKey(artist)
 
     fun checkSpotifyArtistAvailability(artist: MetalArtist) {
         val key = spotifyKey(artist)
@@ -372,13 +372,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun spotifyAvailable(artist: MetalArtist): Boolean? = _spotifyAvailability.value[spotifyKey(artist)]
 
+    fun openSpotifySearch(artist: MetalArtist) = openExternalUrl("https://open.spotify.com/search/${Uri.encode(artist.displayName)}")
+
     fun openSpotifyArtist(artist: MetalArtist) {
         _spotifyOpenStatus.value = "Spotify上の${artist.name}を照合中…"
         viewModelScope.launch {
             val destination = spotify.resolveArtistDestination(artist)
             _spotifyAvailability.value = _spotifyAvailability.value + (spotifyKey(artist) to destination.direct)
             if (!destination.direct) {
-                _spotifyOpenStatus.value = destination.verification.ifBlank { "Spotifyで本人の完全一致を確認できませんでした" }
+                _spotifyOpenStatus.value = destination.verification.ifBlank { "Spotifyで本人を確認できませんでした。検索で選択してください" }
+                openExternalUrl(destination.url)
                 return@launch
             }
             _spotifyOpenStatus.value = "Spotify本人確認済み"
@@ -612,8 +615,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .thenBy { it.name.lowercase() }
     )
 
-    fun reactionFor(artistName: String): DiscoveryRecord? =
-        _history.value.firstOrNull { it.artistName.equals(artistName, true) }
+    fun reactionFor(artistName: String): DiscoveryRecord? {
+        val artist = (_externalArtists.value + _initialCatalog.value).firstOrNull { item ->
+            ArtistAliases.names(item).any { ArtistAliases.normalize(it) == ArtistAliases.normalize(artistName) }
+        }
+        val names = (artist?.let(ArtistAliases::names).orEmpty() + ArtistAliases.aliases(artistName) + artistName)
+            .map(ArtistAliases::normalize).toSet()
+        return _history.value.firstOrNull { ArtistAliases.normalize(it.artistName) in names }
+    }
+
+    fun latestReactionsByArtist(): Map<String, DiscoveryRecord> {
+        val records = mutableMapOf<String, DiscoveryRecord>()
+        _history.value.forEach { record ->
+            (ArtistAliases.aliases(record.artistName) + record.artistName).forEach { alias ->
+                records.putIfAbsent(ArtistAliases.normalize(alias), record)
+            }
+        }
+        return allArtists().mapNotNull { artist ->
+            ArtistAliases.names(artist).mapNotNull { records[ArtistAliases.normalize(it)] }
+                .maxByOrNull { it.date }?.let { artist.name.trim().lowercase() to it }
+        }.toMap()
+    }
 
     fun spotifyLinkCached(artist: MetalArtist): Boolean = store.spotifyArtistLinkV064(artist) != null
 
@@ -782,9 +804,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         store.saveInitialCatalog(_initialCatalog.value)
     }
 
-    private fun allArtists(): List<MetalArtist> = (_initialCatalog.value + _externalArtists.value +
+    private fun allArtists(): List<MetalArtist> = ArtistAliases.deduplicate(_externalArtists.value + _initialCatalog.value +
         MetalCatalog.artists.filter { it.name.trim().lowercase() in ratedArtistNames() })
-        .distinctBy { it.name.lowercase() }
 
     fun syncSpotify() = syncSpotifyInternal(showSearchResults = false)
 
@@ -1342,8 +1363,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return LocalDate.now().toEpochDay() * 31L + lensHash
     }
 
-    private fun ratedArtistNames(): Set<String> =
-        _history.value.map { it.artistName.trim().lowercase() }.toSet()
+    private fun ratedArtistNames(): Set<String> = ArtistAliases.expandRatedNames(
+        _history.value.map { it.artistName }, _externalArtists.value + _initialCatalog.value + MetalCatalog.artists)
 
     private fun lensCandidates(genres: List<String> = activeGenres()): List<MetalArtist> =
         GenreLensCatalog.filter(eligibleArtists(), genres)

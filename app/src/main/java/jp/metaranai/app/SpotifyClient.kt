@@ -85,11 +85,12 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
     suspend fun resolveArtistDestination(artist: MetalArtist): SpotifyArtistDestination = withContext(Dispatchers.IO) {
         store.spotifyArtistLinkV064(artist)?.let { return@withContext it }
 
-        val fallback = "https://open.spotify.com/search/${enc(artist.name)}"
+        val lookupArtist = ArtistAliases.forLookup(artist)
+        val fallback = "https://open.spotify.com/search/${enc(lookupArtist.name)}"
         var strongIdentityReason: String? = null
 
         // Route A: trusted MBID -> explicit Spotify relation.
-        artist.mbid?.takeIf { it.isNotBlank() && artist.metadataConfidence >= 90 }?.let { mbid ->
+        lookupArtist.mbid?.takeIf { it.isNotBlank() && lookupArtist.metadataConfidence >= 90 }?.let { mbid ->
             resolveSpotifyFromMusicBrainz(mbid)?.let { verified ->
                 val out = verified.copy(verification = "MusicBrainz MBIDで本人確認")
                 store.saveSpotifyArtistLinkV064(artist, out.url, out.artistId, out.verification)
@@ -100,7 +101,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
 
         // Route B: recover a trustworthy MBID from Local DB metadata.
         if (strongIdentityReason == null) {
-            val identity = runCatching { musicBrainz.resolveIdentityForSpotify(artist) }.getOrNull()
+            val identity = runCatching { musicBrainz.resolveIdentityForSpotify(lookupArtist) }.getOrNull()
             if (identity != null && identity.confidence >= 80) {
                 val mbid = identity.artist.mbid
                 if (!mbid.isNullOrBlank()) {
@@ -129,15 +130,15 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
             return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify未認証: 検索へ")
         }
 
-        val exactMatches = runCatching { spotifyExactArtistMatches(artist.name, token) }.getOrDefault(emptyList())
+        val exactMatches = runCatching { spotifyExactArtistMatches(lookupArtist.name, token) }.getOrDefault(emptyList())
         if (exactMatches.isEmpty()) {
             return@withContext SpotifyArtistDestination(fallback, false, verification = "Spotify完全一致なし: 検索へ")
         }
 
         // Independent catalog evidence. Last.fm can be sparse for underground artists, so Apple is
         // a fallback/second opinion rather than silently treating missing Last.fm data as a mismatch.
-        val lastFmTracks = runCatching { lastFmTopTrackNames(artist, 40) }.getOrDefault(emptyList())
-        val appleGroups = runCatching { appleCatalogGroups(artist.name) }.getOrDefault(emptyList())
+        val lastFmTracks = runCatching { lastFmTopTrackNames(lookupArtist, 40) }.getOrDefault(emptyList())
+        val appleGroups = runCatching { appleCatalogGroups(lookupArtist.name) }.getOrDefault(emptyList())
 
         val fingerprints = exactMatches.map { candidate ->
             val catalog = runCatching { spotifyCatalogForCandidate(candidate, token) }
@@ -161,7 +162,7 @@ class SpotifyClient(private val context: Context, private val store: LocalStore)
             val bestEvidence = evidences.maxByOrNull { it.score } ?: CatalogEvidence("なし", emptyList(), emptyList())
             CandidateFingerprint(
                 candidate = candidate,
-                genreScore = genreEvidenceScore(artist.genres, jsonArrayStrings(candidate.optJSONArray("genres"))),
+                genreScore = genreEvidenceScore(lookupArtist.genres, jsonArrayStrings(candidate.optJSONArray("genres"))),
                 catalog = catalog,
                 evidence = bestEvidence
             )

@@ -175,7 +175,7 @@ private fun HomeScreen(vm: MainViewModel) {
                 Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Card, RoundedCornerShape(28.dp)).padding(24.dp)) {
                     Text("今日のメタル", color = Acid, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Spacer(Modifier.height(18.dp))
-                    Text(rec.artist.name, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
+                    Text(rec.artist.displayName, color = Color.White, fontSize = 33.sp, fontWeight = FontWeight.Black)
                     Text("${rec.artist.country}  •  ${rec.artist.genres.joinToString(" / ")}", color = Muted)
                     Spacer(Modifier.height(22.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -252,21 +252,21 @@ private fun SpotifyButton(
     onBeforeOpen: (() -> Unit)? = null
 ) {
     val availability by vm.spotifyAvailability.collectAsState()
-    val key = artist.name.trim().lowercase()
+    val key = vm.spotifyKey(artist)
     val available = availability[key]
     LaunchedEffect(key) { vm.checkSpotifyArtistAvailability(artist) }
     Button(
         onClick = {
             onBeforeOpen?.invoke()
-            vm.openSpotifyArtist(artist)
+            if (available == false) vm.openSpotifySearch(artist) else vm.openSpotifyArtist(artist)
         },
-        enabled = available == true,
+        enabled = available != null,
         modifier = modifier
     ) {
         Text(
             when (available) {
                 true -> "Spotify"
-                false -> "Spotify未対応"
+                false -> "Spotifyで検索"
                 null -> "Spotify確認中"
             },
             fontSize = fontSize.sp
@@ -312,7 +312,7 @@ private fun DeepDivePanel(vm: MainViewModel, status: String, results: List<Metal
                 SearchArtistCard(vm, artist, "deep-dive", loading, onArtistDetails = onArtistDetails)
             } else {
             Column(Modifier.fillMaxWidth().background(Bg, RoundedCornerShape(14.dp)).padding(12.dp)) {
-                Text(artist.name, color = Color.White, fontWeight = FontWeight.Bold)
+                Text(artist.displayName, color = Color.White, fontWeight = FontWeight.Bold)
                 Text("${artist.country} • ${artist.genres.take(3).joinToString(" / ")} • HIDDEN ${artist.hiddenScore}", color = Muted, fontSize = 10.sp)
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -377,7 +377,7 @@ private fun SearchScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, Strin
     val overseasPreference by vm.overseasPreference.collectAsState()
     val initialCatalog by vm.initialCatalog.collectAsState()
     val localResults = remember(query, external, overseasPreference, initialCatalog) { vm.search(query) }
-    val merged = vm.applyArtistPreference(localResults + remote).distinctBy { it.name.lowercase() }
+    val merged = ArtistAliases.deduplicate(vm.applyArtistPreference(localResults + remote))
     val suggestionResults = vm.applyArtistPreference(suggestions)
         .filterNot { suggestion -> merged.any { it.name.equals(suggestion.name, true) } }
         .distinctBy { it.name.lowercase() }
@@ -482,7 +482,7 @@ private fun SearchArtistCard(
     onArtistDetails: (MetalArtist, String) -> Unit
 ) {
     val history by vm.history.collectAsState()
-    val record = history.firstOrNull { it.artistName.trim().equals(artist.name.trim(), true) }
+    val record = remember(history, artist) { vm.reactionFor(artist.name) }
     Surface(
         onClick = { onArtistDetails(artist, query.ifBlank { "discover" }) },
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth(),
@@ -490,7 +490,7 @@ private fun SearchArtistCard(
         shape = RoundedCornerShape(18.dp)
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(artist.displayName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
             Text(record?.reaction?.label ?: "未評価", color = if (record == null) Muted else Acid, fontSize = 11.sp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -508,9 +508,9 @@ private fun SearchArtistCard(
 @Composable
 private fun ArtistDetailsDialog(vm: MainViewModel, artist: MetalArtist, onDismiss: () -> Unit) {
     val history by vm.history.collectAsState()
-    val record = history.firstOrNull { it.artistName.trim().equals(artist.name.trim(), true) }
+    val record = remember(history, artist) { vm.reactionFor(artist.name) }
     var feedback by remember(artist.name) { mutableStateOf("") }
-    SettingsDialogShell(title = artist.name, onDismiss = onDismiss) {
+    SettingsDialogShell(title = artist.displayName, onDismiss = onDismiss) {
         Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 12.sp)
         Text(artist.reason, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -551,9 +551,7 @@ private fun ArchiveScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, Stri
 
     val initialCatalog by vm.initialCatalog.collectAsState()
     val archive = remember(external, history, initialCatalog) { vm.archiveArtists() }
-    val latestReaction = remember(history) {
-        history.groupBy { it.artistName.trim().lowercase() }.mapValues { (_, rows) -> rows.first() }
-    }
+    val latestReaction = remember(history, archive) { vm.latestReactionsByArtist() }
     val ratedCount = latestReaction.keys.count { key -> archive.any { it.name.trim().lowercase() == key } }
     val favorites = latestReaction.values.count { it.reaction == Reaction.LOVE_ALL }
     val filtered = archive.filter { artist ->
@@ -622,12 +620,12 @@ private fun ArchiveScreen(vm: MainViewModel, onArtistDetails: (MetalArtist, Stri
         if (visible.isEmpty()) item {
             Text("条件に一致するArtistがいない。フィルターを緩めるか『探す』から地下を追加しよう。", color = Muted, modifier = Modifier.padding(20.dp))
         }
-        items(visible, key = { it.name.lowercase() }) { artist ->
+        items(visible, key = { ArtistAliases.availabilityKey(it) }) { artist ->
             val record = latestReaction[artist.name.trim().lowercase()]
             Column(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).clickable { onArtistDetails(artist, "archive") }.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
-                        Text(artist.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(artist.displayName, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text("${artist.country} • ${artist.genres.joinToString(" / ")}", color = Muted, fontSize = 11.sp)
                     }
                     Text(record?.reaction?.label ?: "未評価", color = if (record == null) Muted else Acid, fontSize = 11.sp, fontWeight = FontWeight.Bold)
